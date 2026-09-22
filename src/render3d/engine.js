@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Folder, makePieces } from './fold.js';
+import { CustomFolder } from './customFold.js';
 import { bakeAtlas, paintFilmChannels, paintFoilRoughness } from './bake.js';
 import { makeAtlasTextures, disposeTextures, applyFaceMaterial, applyCoreMaterial } from './materials.js';
 import { setupStudio } from './lighting.js';
@@ -34,9 +35,9 @@ export class BoxEngine {
     this.props = { ...props };
     if (!this.ready) return;
     const p = this.props;
-    if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey) {
+    if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey || prev.custom !== p.custom) {
       clearTimeout(this._bt);
-      this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); }, 150);
+      this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); }, 600);
     } else if (prev.bakeKey !== p.bakeKey) {
       clearTimeout(this._at);
       this._at = setTimeout(() => { if (this._disposed) return; this.rebake(); }, 150);
@@ -324,10 +325,11 @@ export class BoxEngine {
     const t = Math.max(0.2, this.num('t', 0.45)); // 下限 0.2：art200(t=0.22) 薄纸在 3D 里保持真实厚度
     this._dims = { L, W, H, t };
     const sbb = (this.baked && this.baked.atlasSbb) || this.props.sbb || [0, 0, 100, 100];
-    this.folder = new Folder(T, sbb, (this.baked || {}).innerUV);
+    const custom = this.props.tpl === 'custom';
+    this.folder = custom ? new CustomFolder(T, sbb, (this.baked || {}).innerUV) : new Folder(T, sbb, (this.baked || {}).innerUV);
     this.folder.hasEmb = !!(this.props.embOn === '1' && (this.baked || this._lastBakeInput || {}).hasEmb !== false);
     this.folder._dims = this._dims;
-    this.pieces = makePieces(this.props.tpl || 'rte', L, W, H, t, this.num('glue', 14));
+    this.pieces = custom ? this.props.custom : makePieces(this.props.tpl || 'rte', L, W, H, t, this.num('glue', 14));
     this.boxRoot = this.folder.build(this.pieces, t, this.faceMat, this.coreMat);
     this.scene.add(this.boxRoot);
     if (this.studio) {
@@ -393,7 +395,15 @@ export class BoxEngine {
     if (this.faceMat) this.faceMat.needsUpdate = true;
     if (this.coreMat) this.coreMat.needsUpdate = true;
   }
-  applyFold() { if (this.folder) { this.folder._dims = this._dims; this.folder.applyFold(this.pieces, this.num('fold', 0)); } }
+  applyFold() {
+    if (!this.folder) return;
+    this.folder._dims = this._dims; this.folder.applyFold(this.pieces, this.num('fold', 0));
+    if (this.folder instanceof CustomFolder && this.studio) {
+      const size = this.folder.size;
+      this.studio.setShadowBounds(size.x, size.z, size.y);
+      this.studio.setHelperTarget(0, size.y * 0.35, 0);
+    }
+  }
 
   applyStudioControls() {
     if (!this.studio) return;
@@ -463,7 +473,7 @@ export class BoxEngine {
   }
   frame(smooth = false) {
     const T = this.T;
-    const bb = new T.Box3().setFromObject(this.boxRoot);
+    const bb = new T.Box3().setFromObject(this.boxRoot, this.props.tpl === 'custom');
     const c = bb.getCenter(new T.Vector3()), sz = bb.getSize(new T.Vector3());
     this.boxRoot.updateWorldMatrix(true, true);
     this._centerL = this.boxRoot.worldToLocal(c.clone()); // 盒心（局部坐标）——转盒/spin 的旋转枢轴，折叠或换型后随 frame 刷新
