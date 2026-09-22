@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { store, useStore } from './state/store.js';
 import { geomOf, creaseSegsOf } from './dieline/geom.js';
-import { TPLS } from './dieline/templates.js';
+import { templateNameOf } from './dieline/templates.js';
 import { warnsOf } from './design/layers.js';
 import { StructureView } from './ui/StructureView.jsx';
 import { DesignView } from './ui/DesignView.jsx';
@@ -32,10 +32,11 @@ export function App() {
   const g = geomOf(s, m.t);
   const fmt = v => Math.round(v * 10) / 10;
   const sw = g.sbb[2] - g.sbb[0], sh = g.sbb[3] - g.sbb[1];
-  const tplName = (TPLS.find(x => x.id === s.tpl) || TPLS[0]).name;
+  const tplName = templateNameOf(s);
   const creaseSegs = creaseSegsOf(g);
   const warnN = s.layers.reduce((a, l) => a + warnsOf(l, creaseSegs, g.sbb).length, 0);
-  const okAll = warnN === 0;
+  const customWarnN = s.tpl === 'custom' ? s.custom.warnings.length : 0;
+  const okAll = warnN + customWarnN === 0;
   const tabs = [['structure', '结构'], ['design', '设计'], ['three', '3D'], ['output', '输出']];
 
   const importProject = async () => {
@@ -47,7 +48,7 @@ export function App() {
   };
   const exportProject = () => {
     const stamp = new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-    downloadProject(store.get(), { name: tplName + ' ' + s.L + '×' + s.W + '×' + s.H + ' ' + stamp });
+    downloadProject(store.get(), { name: tplName + (s.tpl === 'custom' ? '' : ' ' + s.L + '×' + s.W + '×' + s.H) + ' ' + stamp });
   };
   const resetPreset = async () => {
     if (!window.confirm('重置为示例盒？当前未导出的修改将丢失。')) return;
@@ -71,10 +72,10 @@ export function App() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <div title={(okAll ? '结构校验通过' : '设计图层警示 ' + warnN + ' 条') + ' · 切线 ' + g.cutN + ' · 压痕 ' + g.creaseN}
+        <div title={(okAll ? '结构校验通过' : '警示 ' + (warnN + customWarnN) + ' 条（详见结构 / 输出）') + ' · 切线 ' + g.cutN + ' · 压痕 ' + g.creaseN}
           style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: okAll ? '#8fc79e' : '#f0b070', whiteSpace: 'nowrap', flex: 'none', minWidth: 0, overflow: 'hidden' }}>
           <div style={{ width: 7, height: 7, borderRadius: 99, background: okAll ? '#3f9e5f' : '#e08030', flex: 'none' }} />
-          {okAll ? '校验通过' : '警示 ' + warnN}
+          {okAll ? (s.tpl === 'custom' ? 'DXF 已导入' : '校验通过') : '警示 ' + (warnN + customWarnN)}
         </div>
         <button onClick={importProject} style={{ padding: '7px 12px', borderRadius: 6, border: '1px solid #6a6151', cursor: 'pointer', fontSize: 12, background: 'transparent', color: '#e8dfcc', whiteSpace: 'nowrap' }}>导入工程</button>
         <button onClick={exportProject} style={{ padding: '7px 12px', borderRadius: 6, border: '1px solid #6a6151', cursor: 'pointer', fontSize: 12, background: 'transparent', color: '#e8dfcc', whiteSpace: 'nowrap' }}>导出工程</button>
