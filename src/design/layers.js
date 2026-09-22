@@ -79,10 +79,13 @@ function craftMaskOf(img) {
 // sc = px/mm 缩放；fill 覆盖颜色（工艺 mask 用 '#fff' 等）
 export function drawLayer(ctx, l, sc, fill, clipPts) {
   ctx.save();
-  if (clipPts && clipPts.length > 2) {
+  if (clipPts && (clipPts.pts || clipPts).length > 2) {
     ctx.beginPath();
-    clipPts.forEach((p, i) => i ? ctx.lineTo(p[0] * sc, p[1] * sc) : ctx.moveTo(p[0] * sc, p[1] * sc));
-    ctx.closePath(); ctx.clip();
+    [clipPts.pts || clipPts, ...(clipPts.holes || [])].forEach(ring => {
+      ring.forEach((p, i) => i ? ctx.lineTo(p[0] * sc, p[1] * sc) : ctx.moveTo(p[0] * sc, p[1] * sc));
+      ctx.closePath();
+    });
+    ctx.clip(clipPts.holes?.length ? 'evenodd' : 'nonzero');
   }
   ctx.globalAlpha = l.opacity == null ? 1 : l.opacity;
   if (l.rot) {
