@@ -2,6 +2,7 @@
 import { storeToRig, rigToStorePatch } from '../render3d/rig.js';
 import { normalizeMaterial, materialToStorePatch } from '../render3d/materialPresets.js';
 import { asset } from '../asset.js';
+import { prepareCustom } from '../dieline/custom.js';
 
 export const PROJECT_SCHEMA = 'box3d-project';
 export const PROJECT_VERSION = 1;
@@ -30,7 +31,10 @@ export function makeProject(state, meta = {}) {
         ? state.projectThumbnail
         : (typeof meta.thumbnail === 'string' ? meta.thumbnail : '')
     },
-    box: copyFields(state, BOX_FIELDS),
+    box: {
+      ...copyFields(state, BOX_FIELDS),
+      ...(state.tpl === 'custom' ? { custom: copyFields(state.custom, ['version', 'name', 'sourceUnits', 'sourceWarnings', 'segs', 'root', 'angles']) } : {})
+    },
     design: { layers: state.layers.map(cleanLayer), seq: state.seq },
     appearance: {
       material: normalizeMaterial(state),
@@ -58,6 +62,8 @@ const imageOf = src => new Promise(resolve => {
 
 export async function projectStateOf(raw, view = 'design') {
   const doc = assertProject(raw);
+  // Derived faces are rebuilt at the file boundary; imported JSON cannot inject renderer geometry.
+  const custom = doc.box.tpl === 'custom' ? prepareCustom(doc.box.custom) : null;
   const layers = await Promise.all(doc.design.layers.map(async layer => {
     const clean = { ...layer };
     const img = await imageOf(clean.imgSrc);
@@ -65,6 +71,7 @@ export async function projectStateOf(raw, view = 'design') {
   }));
   return {
     ...copyFields(doc.box, BOX_FIELDS),
+    custom,
     layers,
     seq: doc.design.seq,
     ...materialToStorePatch(doc.appearance && doc.appearance.material),
