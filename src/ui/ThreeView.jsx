@@ -1,7 +1,8 @@
 // 3D 视图：折叠控制 / 基材覆膜 / 工艺样例 / 压纹参数 + PBR 参数与通道说明
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { store, useStore } from '../state/store.js';
-import { TPLS } from '../dieline/templates.js';
+import { templateNameOf } from '../dieline/templates.js';
+import { CustomFoldControls } from './DxfImport.jsx';
 import { embDirOf } from '../design/emboss.js';
 import { BoxPreview, boxPreviewContextOf } from '../render3d/BoxPreview.jsx';
 import { STAGES } from '../render3d/stage.js';
@@ -16,7 +17,7 @@ export function ThreeView() {
   const pf = useRef(null);
   const engRef = useRef(null);
   const [foldPlaying, setFoldPlaying] = useState(false);
-  const tplName = (TPLS.find(x => x.id === s.tpl) || TPLS[0]).name;
+  const tplName = templateNameOf(s);
   const finCount = f => s.layers.filter(l => l.finish === f).length;
   const embCount = dir => s.layers.filter(l => l.finish === 'emboss' && embDirOf(l, s.embDir) === dir).length;
   const finSummary = '工艺图层：烫金×' + (finCount('foil') + finCount('silver')) + ' · UV×' + finCount('uv') + ' · 亮面×' + finCount('gloss') + ' · 镭射×' + finCount('holo') + ' · 凸×' + embCount('up') + ' · 凹×' + embCount('down') + '（来自设计页）';
@@ -59,7 +60,7 @@ export function ThreeView() {
       <Block>
         <ST>当前盒型</ST>
         <div style={{ background: '#f0ebe0', border: '1px solid #e2dac9', borderRadius: 6, padding: '9px 11px', fontSize: 11.5, lineHeight: 1.6, color: '#3d3830', fontFamily: "'JetBrains Mono',monospace" }}>
-          {tplName} · {m.name} t={t}<br />内尺寸 {s.L} × {s.W} × {s.H}
+          {tplName} · {m.name} t={t}<br />{s.tpl === 'custom' ? 'DXF 毫米刀模' : `内尺寸 ${s.L} × ${s.W} × ${s.H}`}
         </div>
         <div style={{ fontSize: 10.5, color: '#8a8071', marginTop: 6 }}>尺寸与纸厚沿用「结构」页设置</div>
         <div style={{ fontSize: 10.5, color: '#9a5b1f', marginTop: 4 }}>{finSummary}</div>
@@ -75,6 +76,7 @@ export function ThreeView() {
           <button onClick={() => { stopFold(); store.set({ fold: 0 }); }} style={{ ...btnSt, flex: 1, padding: '7px 0', color: '#5c554a' }}>展开</button>
         </div>
       </Block>
+      {s.tpl === 'custom' && <Block><ST>自定义折叠</ST><CustomFoldControls custom={s.custom} /></Block>}
       <Block>
         <ST>纸张 / 覆膜</ST>
         <div style={{ fontSize: 10.5, color: '#8a8071', marginBottom: 3 }}>纸张</div>

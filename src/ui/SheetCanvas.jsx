@@ -306,14 +306,14 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
             </linearGradient>
             {(g.panels || []).map(panel => {
               const id = 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-');
-              return <clipPath key={panel.panelId} id={id} clipPathUnits="userSpaceOnUse"><polygon points={panel.pts.map(p => p[0] + ',' + p[1]).join(' ')} /></clipPath>;
+              return <clipPath key={panel.panelId} id={id} clipPathUnits="userSpaceOnUse"><path clipRule="evenodd" d={[panel.pts, ...(panel.holes || [])].map(ring => 'M' + ring.map(p => p.join(' ')).join('L') + 'Z').join(' ')} /></clipPath>;
             })}
           </defs>
         )}
         <g transform={'translate(' + s.tx + ' ' + s.ty + ') scale(' + k + ')'}>
           {view === 'structure' && (<>
             {s.show.bleed && s.bleed > 0 && <path d={g.fillPath} fill="none" stroke="rgba(154,91,31,0.22)" strokeWidth={s.bleed * 2} strokeLinejoin="round" strokeLinecap="round" />}
-            <path d={g.fillPath} fill="#fdfcf7" stroke="none" />
+            <path d={g.fillPath} fillRule={s.tpl === 'custom' ? 'evenodd' : undefined} fill="#fdfcf7" stroke="none" />
             {s.show.safe && <path d={g.safePath} fill="none" stroke="#c9a227" strokeWidth={0.45} strokeDasharray="2.2 1.8" />}
             <path d={g.creasePath} fill="none" stroke="#2E7D46" strokeWidth={1.5} style={{ vectorEffect: 'non-scaling-stroke' }} />
             <path d={g.cutPath} fill="none" stroke="#C8102E" strokeWidth={1.6} style={{ vectorEffect: 'non-scaling-stroke' }} />
@@ -328,7 +328,7 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
             {editOn && renderLineEditor()}
           </>)}
           {view === 'design' && (<>
-            <path d={g.fillPath} fill="#fdfcf7" stroke="none" />
+            <path d={g.fillPath} fillRule={s.tpl === 'custom' ? 'evenodd' : undefined} fill="#fdfcf7" stroke="none" />
             <path d={g.safePath} fill="none" stroke="#ddd0ab" strokeWidth={0.4} strokeDasharray="2.2 1.8" />
             <path d={g.creasePath} fill="none" stroke="#a8c9ae" strokeWidth={1} style={{ vectorEffect: 'non-scaling-stroke' }} />
             <path d={g.cutPath} fill="none" stroke="#dfaeb2" strokeWidth={1} style={{ vectorEffect: 'non-scaling-stroke' }} />
