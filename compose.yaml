@@ -1,0 +1,7 @@
+services:
+  web:
+    build: .
+    image: openbox3d:local
+    ports:
+      - "127.0.0.1:26847:80"
+    restart: unless-stopped

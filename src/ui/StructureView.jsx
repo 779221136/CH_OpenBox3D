@@ -5,6 +5,7 @@ import { TPLS, MATS } from '../dieline/templates.js';
 import { geomOf } from '../dieline/geom.js';
 import { reflowLayersToContainers } from '../design/containers.js';
 import { SheetCanvas } from './SheetCanvas.jsx';
+import { DxfImport } from './DxfImport.jsx';
 import { ST, Block, Toggle, ToggleRow, NumField, Note, KV, selectSt, btnSt } from './widgets.jsx';
 
 const setNum = (key, min, max) => e => {
@@ -37,7 +38,7 @@ export function StructureView() {
     { k: '含出血', v: fmt(sw + 2 * s.bleed) + ' × ' + fmt(sh + 2 * s.bleed) },
     { k: '纸厚 t', v: t + ' mm' }
   ].concat(specTpl[s.tpl] || []);
-  const checks = ['外轮廓闭合', '无自交 / 孤立线段', '最小刀距 ≥ 1.5 mm', '压痕两侧均有连接面', '出血 ≥ ' + m.bleed + ' mm（' + m.note + '）'];
+  const checks = s.tpl === 'custom' ? ['DXF 毫米坐标 · 原始刀线保留', s.custom.panels.length + ' 个面 · ' + s.custom.hinges.length + ' 条折叠轴'] : ['外轮廓闭合', '无自交 / 孤立线段', '最小刀距 ≥ 1.5 mm', '压痕两侧均有连接面', '出血 ≥ ' + m.bleed + ' mm（' + m.note + '）'];
   const compNote = s.tpl === 'rte' || s.tpl === 'ste' ? '当前：W+t · L+t · W+t · L+2t，高度 H+t' : s.tpl === 'mailer' ? '当前：楞厚 t=' + t + '，侧墙 H+t，盖宽 W+3t' : s.tpl === 'cyl' ? '当前：直径 D=L，筒身 24 段卷合，盖为 24 边形' : s.tpl === 'hex' ? '当前：边长 W，六棱筒，盖为正六边形' : '当前：盖/套筒按 +1mm/边 放量';
   const editOn = s.editMode;
   const typeOvrCount = Object.keys(s.typeOvr).length;
@@ -57,16 +58,17 @@ export function StructureView() {
               <div style={{ fontSize: 10, color: '#8a8071' }}>{b.sub}</div>
             </div>
           ))}
+          <DxfImport />
         </div>
       </Block>
-      <Block>
+      {s.tpl !== 'custom' && <Block>
         <ST>内尺寸 · mm</ST>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7 }}>
           <NumField label="长 L" value={s.L} onChange={setNum('L', 20, 600)} />
           <NumField label="宽 W" value={s.W} onChange={setNum('W', 15, 600)} />
           <NumField label="高 H" value={s.H} onChange={setNum('H', 15, 600)} />
         </div>
-      </Block>
+      </Block>}
       <Block>
         <ST>材质</ST>
         <select value={s.matId} onChange={e => { const nm = MATS.find(x => x.id === e.target.value); store.set(st => { const om = MATS.find(x => x.id === st.matId) || MATS[0], next = { ...st, matId: nm.id, bleed: nm.bleed }; return { matId: nm.id, bleed: nm.bleed, layers: reflowLayersToContainers(st.layers, geomOf(st, om.t), geomOf(next, nm.t)) }; }); }} style={selectSt}>
@@ -78,10 +80,10 @@ export function StructureView() {
         <ST>工艺参数</ST>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
           <NumField label="出血 mm" value={s.bleed} onChange={setNum('bleed', 0, 10)} />
-          <NumField label="糊口 mm" value={s.glue} onChange={setNum('glue', 8, 30)} />
+          {s.tpl !== 'custom' && <NumField label="糊口 mm" value={s.glue} onChange={setNum('glue', 8, 30)} />}
         </div>
       </Block>
-      <Block>
+      {s.tpl !== 'custom' && <Block>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <ST style={{ marginBottom: 0 }}>线型编辑</ST>
           <Toggle on={s.editMode} onClick={() => store.set(st => ({ editMode: !st.editMode, selSeg: null }))} />
@@ -99,16 +101,16 @@ export function StructureView() {
           )}
           <button onClick={() => store.set({ typeOvr: {}, selSeg: null })} style={{ ...btnSt, marginTop: 9, width: '100%', padding: '7px 0', color: '#5c554a' }}>重置线型编辑</button>
         </>)}
-      </Block>
+      </Block>}
       <div style={{ padding: 14 }}>
-        <Note><b style={{ color: '#211d18' }}>纸厚补偿</b>　制造尺寸 = 内尺寸 + n × t<br />{compNote}</Note>
+        {s.tpl === 'custom' ? <Note>DXF 按原始刀模尺寸导入，纸厚仅改变 3D 厚度。糊口、纸厚放量与安全区请在 CAD 中设置；在「3D」页调整折叠角度。</Note> : <Note><b style={{ color: '#211d18' }}>纸厚补偿</b>　制造尺寸 = 内尺寸 + n × t<br />{compNote}</Note>}
       </div>
     </div>
 
     <SheetCanvas view="structure" g={g} />
 
     <div style={{ width: 258, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
-      <Block><ST>制造尺寸（已补偿）</ST>{specRows.map(r => <KV key={r.k} k={r.k} v={r.v} />)}</Block>
+      <Block><ST>{s.tpl === 'custom' ? 'DXF 尺寸 · mm' : '制造尺寸（已补偿）'}</ST>{specRows.map(r => <KV key={r.k} k={r.k} v={r.v} />)}</Block>
       <Block>
         <ST>刀模统计</ST>
         <KV k="切线" v={fmt(g.cutLen / 1000) + ' m · ' + g.cutN + ' 段'} />
@@ -127,6 +129,7 @@ export function StructureView() {
             <div style={{ width: 6, height: 6, borderRadius: 99, background: '#3f9e5f', flex: 'none' }} />{c}
           </div>
         ))}
+        {s.tpl === 'custom' && s.custom.warnings.map((w, i) => <div key={i} style={{ color: '#a26023', fontSize: 11, lineHeight: 1.65, marginTop: 7 }}>{w}</div>)}
       </div>
     </div>
   </>);

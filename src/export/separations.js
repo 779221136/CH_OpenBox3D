@@ -21,7 +21,7 @@ export async function exportSeparations(s, mat) {
     { key: 'emboss-up', mask: emboss.up, exists: emboss.hasUp, label: 'EMBOSS UP ' + s.embDepth + 'MM', cn: '击凸版' },
     { key: 'emboss-down', mask: emboss.down, exists: emboss.hasDown, label: 'EMBOSS DOWN ' + s.embDepth + 'MM', cn: '击凹版' }
   ];
-  const base = s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H;
+  const base = s.tpl === 'custom' ? 'DXF_' + (Wmm - 2 * b).toFixed(1) + 'x' + (Hmm - 2 * b).toFixed(1) : s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H;
   let made = 0;
   for (const proc of PROCS) {
     const ls = proc.match ? s.layers.filter(l => l.visible && proc.match(l)) : [];

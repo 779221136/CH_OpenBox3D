@@ -2,7 +2,7 @@
 import React from 'react';
 import { store, useStore } from '../state/store.js';
 import { geomOf, creaseSegsOf } from '../dieline/geom.js';
-import { TPLS } from '../dieline/templates.js';
+import { templateNameOf } from '../dieline/templates.js';
 import { warnsOf, FIN_NAMES, layerNameOf, dpiOf } from '../design/layers.js';
 import { embDirOf } from '../design/emboss.js';
 import { exportPDF } from '../export/pdf.js';
@@ -15,7 +15,7 @@ export function OutputView() {
   const g = geomOf(s, m.t);
   const fmt = v => Math.round(v * 10) / 10;
   const sw = g.sbb[2] - g.sbb[0], sh = g.sbb[3] - g.sbb[1];
-  const tplName = (TPLS.find(x => x.id === s.tpl) || TPLS[0]).name;
+  const tplName = templateNameOf(s);
   const typeOvrCount = Object.keys(s.typeOvr).length;
   const creaseSegs = creaseSegsOf(g);
   const missingImages = s.layers.filter(l => l.visible && l.kind === 'image' && !l.img);
@@ -30,9 +30,9 @@ export function OutputView() {
     { label: '轮廓闭合、自交、孤立线段与最小刀距：本版本未自动检测，交付前须由印厂/RIP 预检', dot: '#9a8f7e' }
   ];
   const designWarnRows = s.layers.flatMap(l => warnsOf(l, creaseSegs, g.sbb).map(w => ({ label: '图层「' + layerNameOf(l) + '」：' + w, dot: '#d05a2a' })));
-  const outChecks = checksArr.concat(designWarnRows);
+  const outChecks = checksArr.concat(designWarnRows, s.tpl === 'custom' ? s.custom.warnings.map(label => ({ label, dot: '#d05a2a' })) : []);
   const outSummary = [
-    { k: '盒型', v: tplName }, { k: '内尺寸', v: s.L + ' × ' + s.W + ' × ' + s.H + ' mm' },
+    { k: '盒型', v: tplName }, { k: s.tpl === 'custom' ? '来源' : '内尺寸', v: s.tpl === 'custom' ? 'DXF · ' + s.custom.sourceUnits : s.L + ' × ' + s.W + ' × ' + s.H + ' mm' },
     { k: '材质', v: m.name + ' · t=' + m.t }, { k: '出血', v: s.bleed + ' mm' },
     { k: '展开尺寸', v: fmt(sw) + ' × ' + fmt(sh) + ' mm' },
     { k: '刀线', v: g.cutN + ' 切 · ' + g.creaseN + ' 压 · 线型调整 ' + typeOvrCount },

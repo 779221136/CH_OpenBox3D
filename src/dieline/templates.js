@@ -22,6 +22,8 @@ export const TPLS = [
   { id: 'hex', code: 'HEX', name: '六边形盒', sub: '六棱筒' }
 ];
 
+export const templateNameOf = s => s.tpl === 'custom' ? (s.custom?.name || '自定义 DXF') : (TPLS.find(x => x.id === s.tpl) || TPLS[0]).name;
+
 // 正 N 边形盖的几何参数：apothem / 外接圆半径 / 盖高
 export function discBbox(N, len) {
   const a = len / (2 * Math.tan(Math.PI / N));

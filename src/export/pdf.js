@@ -41,6 +41,7 @@ export function pageBoxes(s, g) {
   const b = s.bleed;
   const ox = g.sbb[0] - b, oy = g.sbb[1] - b;
   const Wmm = (g.sbb[2] - g.sbb[0]) + 2 * b, Hmm = (g.sbb[3] - g.sbb[1]) + 2 * b;
+  if (s.tpl === 'custom' && (!(Wmm > 0 && Hmm > 0) || Wmm * Hmm * (300 / 25.4) ** 2 > 64000000 || Math.max(Wmm, Hmm) * 300 / 25.4 > 32767)) throw new Error('DXF 导出版面过大，超过 300 dpi 输出容量；请核对图纸单位或拆分刀模。');
   const k = 72 / 25.4, Wpt = Wmm * k, Hpt = Hmm * k;
   const trim = [b * k, b * k, Wpt - b * k, Hpt - b * k].map(v => v.toFixed(2)).join(' ');
   const trimRect = [b * k, b * k, Wpt - 2 * b * k, Hpt - 2 * b * k].map(v => v.toFixed(2)).join(' ');
@@ -79,7 +80,13 @@ async function renderArt(s, g, boxes, S, processOnly = false) {
   const X = v => (v - boxes.ox) * S, Y = v => (v - boxes.oy) * S;
   if (!processOnly) {
     c.fillStyle = '#fdfcf7';
-    g.fills.forEach(pts => { c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.closePath(); c.fill(); });
+    if (s.tpl === 'custom') c.beginPath();
+    g.fills.forEach(pts => {
+      if (s.tpl !== 'custom') c.beginPath();
+      pts.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.closePath();
+      if (s.tpl !== 'custom') c.fill();
+    });
+    if (s.tpl === 'custom') c.fill('evenodd');
   }
   c.save(); c.translate(-boxes.ox * S, -boxes.oy * S);
   for (const l of s.layers) { if (l.visible && (!processOnly || (l.finish || 'none') === 'none')) drawLayer(c, l, S, undefined, clipPtsOf(g.panels, l)); }
@@ -110,7 +117,8 @@ export async function exportPDF(s, mat, mode = 'cmyk') {
   const PX = v => ((v - ox) * k).toFixed(2), PY = v => (Hpt - (v - oy) * k).toFixed(2);
   const path = ty => g.segs.filter(sg => sg.t === ty).map(sg =>
     sg.pts.map((p, i) => PX(p[0]) + ' ' + PY(p[1]) + (i ? ' l' : ' m')).join(' ') + ' S').join('\n');
-  const info = (TPLS.find(x => x.id === s.tpl) || {}).code + ' ' + s.L + 'x' + s.W + 'x' + s.H + 'mm t=' + mat.t + ' bleed=' + b + 'mm scale 1:1 ' + (mode === 'rgb' ? 'RGB' : 'CMYK');
+  const sizeText = s.tpl === 'custom' ? 'DXF ' + (g.sbb[2] - g.sbb[0]).toFixed(1) + 'x' + (g.sbb[3] - g.sbb[1]).toFixed(1) : (TPLS.find(x => x.id === s.tpl) || {}).code + ' ' + s.L + 'x' + s.W + 'x' + s.H;
+  const info = sizeText + 'mm t=' + mat.t + ' bleed=' + b + 'mm scale 1:1 ' + (mode === 'rgb' ? 'RGB' : 'CMYK');
   // 刀线描边：生产稿 = 专色 Separation 叠印（RIP/Acrobat）；评审稿 = DeviceRGB（任何查看器可见）
   const dieline = mode !== 'rgb'
     ? '/OP1 gs\n/CS2 CS 1 SCN 0.9 w\n' + path('crease') + '\n/CS1 CS 1 SCN 0.9 w\n' + path('cut') + '\n'
@@ -147,5 +155,6 @@ export async function exportPDF(s, mat, mode = 'cmyk') {
     objs.push('<< /Type /Metadata /Subtype /XML /Length ' + pdfByteLength(xmp) + ' >>\nstream\n' + xmp + '\nendstream');
   }
   const suffix = professional ? '_professional' : mode === 'cmyk' ? '_cmyk' : '';
-  writePdf(objs, s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H + suffix + '_print.pdf', professional ? { infoRef: 7 } : {});
+  const filename = s.tpl === 'custom' ? (s.custom.name || 'custom').replace(/[\\/:*?"<>|]+/g, '-') : s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H;
+  writePdf(objs, filename + suffix + '_print.pdf', professional ? { infoRef: 7 } : {});
 }

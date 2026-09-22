@@ -64,6 +64,26 @@ npm run build:pages  # build with base=/OpenBox3D/ for GitHub Pages subpath host
 
 Note: the dev server binds to `127.0.0.1` only (not reachable from LAN) — this is a deliberate security baseline.
 
+### Docker 本机部署
+
+安装并启动 Docker Desktop，然后在项目目录执行：
+
+```bash
+docker compose up -d --build
+```
+
+打开 <http://127.0.0.1:26847>。镜像使用 Node.js 22 执行 `npm ci` 和 `npm run build`（含模板同步检查），由 Nginx 提供静态网页，仅开放本机访问。无需数据库或 API Key。
+
+```bash
+docker compose ps          # 查看状态
+docker compose logs --tail=50  # 查看日志
+docker compose stop        # 停止
+docker compose up -d       # 再次启动
+git pull --ff-only && docker compose up -d --build  # 更新
+```
+
+容器设置为 `unless-stopped`，Docker 启动后自动恢复运行。设计请通过页面的「导出工程」保存为本地 `.boxproj` 文件。
+
 ### Live demo deployment
 
 The site at <https://yuyou-dev.github.io/OpenBox3D/> is built from this repo by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main` (GitHub Pages source: *GitHub Actions*). All rendering, baking and PDF generation happen client-side — the demo is a purely static host.
@@ -138,3 +158,15 @@ Handy during development: `?view=structure|design|three|output`, `?tpl=rte|ste|m
 - **替换示例盒**：在工作台设计好盒子 → 顶栏「导出工程」→ `npm run preset:from -- /路径/工程.boxproj`（图片抽取到 `public/preset/`，工程写入 `src/preset/preset-box.json`）。
 - **开源边界**：本开源版不含 AI 生图、AR/iOS 预览、DXF 导出与实验性的材质和环境实验室。
 - 开发服务器仅绑定 `127.0.0.1`（局域网不可达），属刻意安全基线。
+
+### 自定义 DXF 盒型（本地扩展）
+
+左侧盒型库选择「DXF · 自定义盒型」导入。红色为切线、绿色为压痕（支持实体色和图层色）；读取 LINE、二维 POLYLINE/LWPOLYLINE（含凸度）、ARC/CIRCLE，并兼容普通嵌套 INSERT、1–3 次控制点 SPLINE。圆弧/样条按 0.05 mm 公差采样；按 INSUNITS 转为毫米，无单位文件使用入口所选单位。不支持的对象、非平面或非红绿对象会明确报错并保留原工程。
+
+自定义几何接入原有设计、材质、印刷 PDF 和工艺分版；「导出工程」将毫米刀线与折叠设置写入 `.boxproj`，重新导入时重建面板。DXF 尺寸不自动添加纸厚放量。3D 使用相邻面板的压痕作刚性折叠，默认 90°，可选择固定面并逐条调整正负角度；独立片件、切缝和闭环会提示，不自动装配或求解碰撞。结构识别端点公差为 0.02 mm，短压痕端点最多延伸 1.1 mm 以连接面板，并提示；原始输出刀线保持不变。
+
+检查：`npm run check:dxf`（构建时自动运行）；实际文件回归：
+
+```sh
+node scripts/check-dxf.mjs "/路径/展示盒 刀模.dxf"
+```

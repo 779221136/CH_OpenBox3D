@@ -19,11 +19,11 @@ export const heroContainerOf = g => (g.panels || []).find(p => p.role === 'hero'
 export const containerById = (g, id) => id == null ? null : (g.panels || []).find(p => p.panelId === id) || null;
 export const clipPtsOf = (panels, layer) => {
   const panel = layer && layer.panelId != null ? (panels || []).find(p => p.panelId === layer.panelId) : null;
-  return panel ? panel.pts : null;
+  return panel?.holes?.length ? panel : panel ? panel.pts : null;
 };
 
 export function containerAt(g, pt) {
-  return (g.panels || []).filter(p => pointInPolygon(pt, p.pts))
+  return (g.panels || []).filter(p => pointInPolygon(pt, p.pts) && !(p.holes || []).some(hole => pointInPolygon(pt, hole)))
     .sort((a, b) => {
       const aa = bboxOfPts(a.pts), bb = bboxOfPts(b.pts);
       return (aa[2] - aa[0]) * (aa[3] - aa[1]) - (bb[2] - bb[0]) * (bb[3] - bb[1]);
