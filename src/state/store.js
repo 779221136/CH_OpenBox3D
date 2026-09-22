@@ -13,6 +13,7 @@ const paper0 = paperPreset(initialPaper), film0 = filmPreset(initialFilm);
 const rig0 = scenePreset(qp.get('studio') || 'lab-default'); // 默认场景即内置 lab-default（原「候选21」红棚参数固化）；旧 id neutral/high-key/dark-craft 仍兼容
 const initial = {
   view: qp.get('view') || 'structure', tpl: qp.get('tpl') || 'rte', L: 80, W: 40, H: 120, matId: 'sbs350', bleed: 3, glue: 14,
+  custom: null,
   show: { bleed: true, safe: true, dims: true, labels: true },
   k: 2.2, tx: 160, ty: 200,
   fold: qp.has('fold') ? +qp.get('fold') : 24, foldFromQuery: qp.has('fold'), mat3d: qp.get('mat3d') || 'sbs', paper3d: initialPaper, film3d: initialFilm,
