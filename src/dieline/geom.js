@@ -3,11 +3,12 @@
 // 手动编辑存为覆盖指令流（ovr 节点位移、typeOvr 线型切换），在模板求值结果上重放。
 import { genTuck, genMailer, genTray, genSleeve, genTube } from './templates.js';
 
-let _key = null, _val = null;
+let _key = null, _val = null, _custom = null;
 
 export function geomOf(s, t) {
   const key = [s.tpl, s.L, s.W, s.H, t, s.bleed, s.glue].join('|') + '|' + JSON.stringify(s.ovr || {}) + JSON.stringify(s.typeOvr || {});
-  if (_key === key) return _val;
+  const custom = s.tpl === 'custom' ? s.custom : null;
+  if (_key === key && _custom === custom) return _val;
   const r2 = v => Math.round(v * 100) / 100;
   const o = { segs: [], fills: [], panels: [], safes: [], labels: [], dims: [], arcRuns: [], sbb: [1e9, 1e9, -1e9, -1e9], vbb: [1e9, 1e9, -1e9, -1e9] };
   const tr = (pts, bb) => { for (const p of pts) { if (p[0] < bb[0]) bb[0] = p[0]; if (p[1] < bb[1]) bb[1] = p[1]; if (p[0] > bb[2]) bb[2] = p[0]; if (p[1] > bb[3]) bb[3] = p[1]; } };
@@ -33,7 +34,18 @@ export function geomOf(s, t) {
   const fmt = v => Math.round(v * 10) / 10;
   const ctx = { cut, crease, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt };
 
-  if (s.tpl === 'rte' || s.tpl === 'ste') genTuck(ctx, s, t, s.tpl === 'rte');
+  if (s.tpl === 'custom') {
+    if (!s.custom?.panels?.length) throw new Error('请先在盒型库导入 DXF 文件。');
+    s.custom.segs.forEach(sg => (sg.t === 'cut' ? cut : crease)(sg.pts.map(p => [...p])));
+    s.custom.panels.forEach((p, i) => {
+      region(p.pts, { ...p, role: p.panelId === s.custom.root ? 'hero' : 'design' });
+      const bb = p.pts.reduce((b, q) => [Math.min(b[0], q[0]), Math.min(b[1], q[1]), Math.max(b[2], q[0]), Math.max(b[3], q[1])], [Infinity, Infinity, -Infinity, -Infinity]);
+      label(...(p.label || [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2]), '面 ' + (i + 1));
+    });
+    (s.custom.contours || s.custom.panels).forEach(p => { fill(p.pts); (p.holes || []).forEach(fill); });
+    dimH(o.sbb[0], o.sbb[2], o.sbb[3] + 12, fmt(o.sbb[2] - o.sbb[0]));
+    dimV(o.sbb[1], o.sbb[3], o.sbb[2] + 12, fmt(o.sbb[3] - o.sbb[1]));
+  } else if (s.tpl === 'rte' || s.tpl === 'ste') genTuck(ctx, s, t, s.tpl === 'rte');
   else if (s.tpl === 'mailer') genMailer(ctx, s, t);
   else if (s.tpl === 'cyl') genTube(ctx, s, t, 24, Math.PI * s.L / 24);
   else if (s.tpl === 'hex') genTube(ctx, s, t, 6, s.W);
@@ -46,8 +58,8 @@ export function geomOf(s, t) {
   }
 
   // 覆盖指令流重放：线型切换、节点位移（位移就地修改，保持点对象引用——arcRuns 圆弧还原依赖引用同一性）
-  Object.entries(s.typeOvr || {}).forEach(pair => { const sg = o.segs[+pair[0]]; if (sg) sg.t = pair[1]; });
-  Object.entries(s.ovr || {}).forEach(pair => {
+  Object.entries(s.tpl === 'custom' ? {} : s.typeOvr || {}).forEach(pair => { const sg = o.segs[+pair[0]]; if (sg) sg.t = pair[1]; });
+  Object.entries(s.tpl === 'custom' ? {} : s.ovr || {}).forEach(pair => {
     const ix = pair[0].split('-'), sg = o.segs[+ix[0]];
     if (sg && sg.pts[+ix[1]]) { const q2 = sg.pts[+ix[1]]; q2[0] += pair[1][0]; q2[1] += pair[1][1]; }
   });
@@ -58,7 +70,7 @@ export function geomOf(s, t) {
   const len = ty => o.segs.filter(g => g.t === ty).reduce((a, g) => { let l = 0; for (let i = 0; i < g.pts.length - 1; i++) l += Math.hypot(g.pts[i + 1][0] - g.pts[i][0], g.pts[i + 1][1] - g.pts[i][1]); return a + l; }, 0);
   o.cutLen = len('cut'); o.creaseLen = len('crease');
   o.cutN = o.segs.filter(g => g.t === 'cut').length; o.creaseN = o.segs.filter(g => g.t === 'crease').length;
-  _key = key; _val = o; return o;
+  _key = key; _custom = custom; _val = o; return o;
 }
 
 export function creaseSegsOf(g) {
