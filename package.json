@@ -10,10 +10,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run check:template-sync",
+    "prebuild": "npm run check:template-sync && npm run check:dxf",
     "build": "vite build",
     "build:pages": "npm run check:template-sync && vite build --base=/OpenBox3D/",
     "check:template-sync": "node scripts/check-template-sync.mjs",
+    "check:dxf": "node scripts/check-dxf.mjs && node scripts/check-custom-fold.mjs",
     "preset:from": "node scripts/boxproj-to-preset.mjs",
     "preview": "vite preview"
   },
