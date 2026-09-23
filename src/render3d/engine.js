@@ -42,6 +42,7 @@ export class BoxEngine {
       clearTimeout(this._at);
       this._at = setTimeout(() => { if (this._disposed) return; this.rebake(); }, 150);
     }
+    if (prev.selectedHingeId !== p.selectedHingeId) this.folder?.setSelectedHinge?.(p.selectedHingeId);
     if (prev.fold !== p.fold) {
       this.applyFold();
       clearTimeout(this._ft);
@@ -108,6 +109,7 @@ export class BoxEngine {
     this.el.appendChild(tb);
     // C4D 式拖拽模式：旋转 / 平移 / 移动盒子 / 转盒
     const mb = document.createElement('div');
+    mb.className = 'box-mode-toolbar';
     mb.style.cssText = 'position:absolute;top:10px;left:10px;display:flex;align-items:center;z-index:2;border:1px solid #ded5c4;border-radius:6px;overflow:hidden;background:rgba(250,247,240,.92)';
     this._modeBtns = {};
     [['rotate', '○ 旋转'], ['pan', '✚ 平移'], ['move', '▣ 移动盒子'], ['turn', '⟳ 转盒']].forEach(pair => {
@@ -317,6 +319,7 @@ export class BoxEngine {
 
   build() {
     const T = this.T;
+    this.folder?.setSelectedHinge?.(null);
     if (this.boxRoot) {
       this.scene.remove(this.boxRoot);
       this.boxRoot.traverse(o => { if (o.geometry) o.geometry.dispose(); });
@@ -331,6 +334,7 @@ export class BoxEngine {
     this.folder._dims = this._dims;
     this.pieces = custom ? this.props.custom : makePieces(this.props.tpl || 'rte', L, W, H, t, this.num('glue', 14));
     this.boxRoot = this.folder.build(this.pieces, t, this.faceMat, this.coreMat);
+    this.folder.setSelectedHinge?.(this.props.selectedHingeId);
     this.scene.add(this.boxRoot);
     if (this.studio) {
       this.studio.setHelperTarget(0, H * 0.35, 0); // 灯位 helper 的指向/拖拽球心跟随盒高
@@ -539,6 +543,7 @@ export class BoxEngine {
     disposeTextures(this._tex);
     if (this.controls) this.controls.dispose();
     this.faceMat.dispose(); this.coreMat.dispose();
+    this.folder?.setSelectedHinge?.(null);
     if (this.boxRoot) this.boxRoot.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     if (this.renderer) { this.renderer.dispose(); this.renderer.forceContextLoss(); if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement); }
   }
