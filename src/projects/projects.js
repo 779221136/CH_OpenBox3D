@@ -104,15 +104,19 @@ export function chooseProjectFile() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.boxproj,application/json';
+    input.hidden = true;
+    input.oncancel = () => { input.remove(); resolve(null); };
     input.onchange = async () => {
-      const file = input.files && input.files[0];
-      if (!file) return resolve(null);
       try {
+        const file = input.files && input.files[0];
+        if (!file) return resolve(null);
         const doc = assertProject(JSON.parse(await file.text()));
         doc.meta = { ...doc.meta, id: newId(), name: doc.meta.name || file.name.replace(/\.boxproj$/i, ''), createdAt: now(), updatedAt: now() };
         resolve(doc);
       } catch (e) { reject(e); }
+      finally { input.remove(); }
     };
-    input.click();
+    try { document.body.appendChild(input); input.click(); }
+    catch (e) { input.remove(); reject(e); }
   });
 }
