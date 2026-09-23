@@ -70,6 +70,8 @@ export function App() {
             <button key={tb[0]} onClick={() => store.set({ view: tb[0] })}
               style={{ padding: '7px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', flex: 'none', background: s.view === tb[0] ? '#9a5b1f' : 'transparent', color: s.view === tb[0] ? '#fff' : '#cfc7b8', fontWeight: s.view === tb[0] ? 700 : 400 }}>{tb[1]}</button>
           ))}
+          <a href={asset('/workflow.html')}
+            style={{ padding: '7px 14px', borderRadius: 6, fontSize: 13, whiteSpace: 'nowrap', flex: 'none', color: '#cfc7b8', textDecoration: 'none' }}>3D私有刀模</a>
         </div>
         <div style={{ flex: 1 }} />
         <div title={(okAll ? '结构校验通过' : '警示 ' + (warnN + customWarnN) + ' 条（详见结构 / 输出）') + ' · 切线 ' + g.cutN + ' · 压痕 ' + g.creaseN}
