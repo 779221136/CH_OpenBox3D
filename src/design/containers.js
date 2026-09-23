@@ -18,6 +18,11 @@ export function pointInPolygon(pt, pts) {
 export const heroContainerOf = g => (g.panels || []).find(p => p.role === 'hero' && p.surface === 'outside') || null;
 export const containerById = (g, id) => id == null ? null : (g.panels || []).find(p => p.panelId === id) || null;
 export const clipPtsOf = (panels, layer) => {
+  if (layer?.scope === 'sheet') {
+    // 复用复合路径的 even-odd 裁切：全部面板及孔洞共用一张整版图。
+    const rings = (panels || []).flatMap(p => [p.pts, ...(p.holes || [])]);
+    return rings.length ? { pts: rings[0], holes: rings.slice(1) } : null;
+  }
   const panel = layer && layer.panelId != null ? (panels || []).find(p => p.panelId === layer.panelId) : null;
   return panel?.holes?.length ? panel : panel ? panel.pts : null;
 };
@@ -31,6 +36,7 @@ export function containerAt(g, pt) {
 }
 
 export function containerOfLayer(g, layer) {
+  if (layer.scope === 'sheet') return null;
   const bound = containerById(g, layer.panelId);
   if (bound) return bound;
   const b = bboxOf(layer), hit = containerAt(g, [b[0] + b[2] / 2, b[1] + b[3] / 2]);
@@ -52,22 +58,24 @@ export function reflowLayersToContainers(layers, oldG, nextG) {
   const nextHero = heroContainerOf(nextG);
   return layers.map(raw => {
     const layer = bindLayerToContainer(raw, oldG);
+    const sheet = layer.scope === 'sheet';
     const from = containerOfLayer(oldG, layer);
     const to = containerById(nextG, from && from.panelId) || nextHero;
-    if (!from || !to) return layer;
-    const a = panelBox(from), b = panelBox(to);
+    if (!sheet && (!from || !to)) return layer;
+    const a = sheet ? oldG.sbb : panelBox(from), b = sheet ? nextG.sbb : panelBox(to);
+    const panelId = sheet ? undefined : to.panelId;
     const aw = Math.max(1e-6, a[2] - a[0]), ah = Math.max(1e-6, a[3] - a[1]);
     const bw = Math.max(1e-6, b[2] - b[0]), bh = Math.max(1e-6, b[3] - b[1]);
     const lb = bboxOf(layer), nx = (lb[0] + lb[2] / 2 - a[0]) / aw, ny = (lb[1] + lb[3] / 2 - a[1]) / ah;
     const cx = b[0] + nx * bw, cy = b[1] + ny * bh, scale = Math.min(bw / aw, bh / ah);
     if (layer.kind === 'text') {
       return {
-        ...layer, panelId: to.panelId, x: round(cx),
+        ...layer, panelId, x: round(cx),
         y: round(cy + (layer.size || 5) * scale * 0.345),
         size: round(Math.max(1.5, (layer.size || 5) * scale)), heroPreset: undefined
       };
     }
     const w = Math.max(2, layer.w * scale), h = Math.max(1, layer.h * scale);
-    return { ...layer, panelId: to.panelId, x: round(cx - w / 2), y: round(cy - h / 2), w: round(w), h: round(h), heroPreset: undefined };
+    return { ...layer, panelId, x: round(cx - w / 2), y: round(cy - h / 2), w: round(w), h: round(h), heroPreset: undefined };
   });
 }
