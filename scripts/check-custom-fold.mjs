@@ -63,9 +63,42 @@ for (const [id, mesh] of folder.meshes) {
 }
 assert.ok(Math.abs(baseArea - 384) < 1e-7, 'The hole must be absent from the cap triangles.');
 assert.throws(() => folder.applyFold({ ...custom, angles: { vertical: NaN } }, 100), /角度/);
-// 导入将 fold 重置为 0 时，150 ms 防抖重建之前仍可能持有旧的内置 Folder。
+// 导入将 fold 重置为 0 时，防抖重建之前仍可能持有旧的内置 Folder。
 assert.doesNotThrow(() => BoxEngine.prototype.applyFold.call({
   folder: { applyFold() {} }, pieces: [], props: { tpl: 'custom' }, num: () => 0, studio: {}
 }));
+for (const fixed of ['base', 'flap']) {
+  const selectedFolder = new CustomFolder(THREE, sbb), data = { ...custom, root: fixed, angles: { vertical: -65, diagonal: 135 } };
+  const selectedRoot = selectedFolder.build(data, t, material, material);
+  for (const hinge of data.hinges) {
+    selectedFolder.setSelectedHinge(hinge.id);
+    const line = selectedFolder.hingeHighlight;
+    assert.equal(line.userData.hingeId, hinge.id);
+    for (const progress of [0, 50, 100]) {
+      selectedFolder.applyFold(data, progress);
+      hinge.edge.forEach(([x, y], i) => {
+        const actual = new THREE.Vector3().fromBufferAttribute(line.geometry.attributes.position, i).applyMatrix4(line.matrixWorld);
+        const expected = new THREE.Vector3(x - selectedFolder.origin[0], selectedFolder.origin[1] - y, 0).applyMatrix4(selectedFolder.meshes.get(hinge.a).matrixWorld);
+        close(actual, expected);
+      });
+      const paperBounds = new THREE.Box3();
+      for (const mesh of selectedFolder.meshes.values()) paperBounds.union(new THREE.Box3().setFromObject(mesh, true));
+      const highlightedBounds = new THREE.Box3().setFromObject(selectedRoot, true);
+      close(highlightedBounds.min, paperBounds.min); close(highlightedBounds.max, paperBounds.max);
+    }
+    let disposed = 0;
+    line.geometry.addEventListener('dispose', () => disposed++); line.material.addEventListener('dispose', () => disposed++);
+    selectedFolder.setSelectedHinge(null);
+    assert.equal(disposed, 2, 'Deselection must release both highlight geometry and material.');
+    assert.equal(line.parent, null); assert.equal(selectedFolder.hingeHighlight, null);
+  }
+  selectedFolder.setSelectedHinge('missing'); assert.equal(selectedFolder.hingeHighlight, null);
+  selectedRoot.traverse(o => o.geometry?.dispose());
+}
+let selectedId;
+const selectionOnly = { ready: true, props: {}, folder: { setSelectedHinge: id => { selectedId = id; } } };
+BoxEngine.prototype.update.call(selectionOnly, { selectedHingeId: 'diagonal' });
+assert.equal(selectedId, 'diagonal');
+assert.ok(!selectionOnly._bt && !selectionOnly._at, 'Selection must not schedule geometry rebuilding or atlas baking.');
 root.traverse(o => o.geometry?.dispose()); material.dispose();
-console.log('Custom fold checks passed: shared arbitrary hinges, signed angles, forest, ground clearance, holes and atlas UV.');
+console.log('Custom fold checks passed: hinges, signed angles, forest, ground clearance, holes, atlas UV and selected crease alignment/cleanup.');
