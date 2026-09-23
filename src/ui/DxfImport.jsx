@@ -6,7 +6,7 @@ import { geomOf } from '../dieline/geom.js';
 import { reflowLayersToContainers } from '../design/containers.js';
 import { btnSt, selectSt } from './widgets.jsx';
 
-export function DxfImport() {
+export function DxfImport({ onImported }) {
   const s = useStore(), input = useRef(null);
   const [unit, setUnit] = useState('1'), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const select = custom => store.set(st => {
@@ -25,6 +25,7 @@ export function DxfImport() {
       const parsed = parseDxf(decodeDxf(await file.arrayBuffer()), { unitScale: +unit });
       const custom = prepareCustom({ ...parsed, name: file.name.replace(/\.dxf$/i, '').slice(0, 80) });
       select(custom);
+      onImported?.(custom);
     } catch (err) { setError(err.message || String(err)); }
     finally { setBusy(false); }
   };
@@ -46,12 +47,14 @@ export function DxfImport() {
   </div>;
 }
 
-export function CustomFoldControls({ custom }) {
-  const setAngle = (id, value) => {
-    if (value === '') return;
-    const angle = Number(value);
-    if (Number.isFinite(angle)) store.set({ custom: { ...custom, angles: { ...custom.angles, [id]: Math.max(-180, Math.min(180, angle)) } } });
-  };
+export function setCustomFoldAngle(id, value) {
+  if (value === '') return;
+  const angle = Number(value);
+  if (Number.isFinite(angle)) store.set(st => st.custom?.hinges.some(h => h.id === id)
+    ? { custom: { ...st.custom, angles: { ...st.custom.angles, [id]: Math.max(-180, Math.min(180, angle)) } } } : null);
+}
+
+export function CustomFoldControls({ custom, selectedHingeId, onSelect }) {
   return <>
     <style>{`
       .dxf-fold-angle { appearance: none; -webkit-appearance: none; height: 16px; background: transparent; }
@@ -67,12 +70,14 @@ export function CustomFoldControls({ custom }) {
         {custom.panels.map((p, i) => <option key={p.panelId} value={p.panelId}>面 {i + 1}</option>)}
       </select>
     </label>
-    {custom.hinges.map((h, i) => <div key={h.id} style={{ display: 'grid', gridTemplateColumns: '68px minmax(0, 1fr) 52px', gap: 6, alignItems: 'center', fontSize: 11, marginBottom: 5 }}>
+    {custom.hinges.map((h, i) => <div key={h.id} data-hinge-id={h.id} className={selectedHingeId === h.id ? 'selected-hinge' : undefined}
+      onClick={() => onSelect?.(h.id)} onFocus={() => onSelect?.(h.id)}
+      style={{ display: 'grid', gridTemplateColumns: '68px minmax(0, 1fr) 52px', gap: 6, alignItems: 'center', fontSize: 11, marginBottom: 5 }}>
       <span>压痕 {i + 1}<small style={{ display: 'block', color: '#8a8071' }}>面 {custom.panels.findIndex(p => p.panelId === h.a) + 1} ↔ {custom.panels.findIndex(p => p.panelId === h.b) + 1} · °</small></span>
       <input className="dxf-fold-angle" aria-label={'压痕 ' + (i + 1) + ' 角度滑块'} type="range" min="-180" max="180" step="1" value={custom.angles?.[h.id] ?? h.angle ?? 90}
-        style={{ width: '100%', minWidth: 0, margin: 0, '--angle-progress': ((custom.angles?.[h.id] ?? h.angle ?? 90) + 180) / 3.6 + '%' }} onChange={e => setAngle(h.id, e.target.value)} />
+        style={{ width: '100%', minWidth: 0, margin: 0, '--angle-progress': ((custom.angles?.[h.id] ?? h.angle ?? 90) + 180) / 3.6 + '%' }} onChange={e => setCustomFoldAngle(h.id, e.target.value)} />
       <input aria-label={'压痕 ' + (i + 1) + ' 角度'} type="number" min="-180" max="180" step="1" value={custom.angles?.[h.id] ?? h.angle ?? 90}
-        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, border: '1px solid #ded5c4', borderRadius: 4, padding: 4 }} onChange={e => setAngle(h.id, e.target.value)} />
+        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, border: '1px solid #ded5c4', borderRadius: 4, padding: 4 }} onChange={e => setCustomFoldAngle(h.id, e.target.value)} />
     </div>)}
     {!custom.hinges.length && <div style={{ fontSize: 11 }}>没有可连接面板的直线压痕，当前为展开预览。</div>}
   </>;
