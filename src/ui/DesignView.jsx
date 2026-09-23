@@ -1,17 +1,19 @@
 // 设计视图：图层列表 + 分层画布 + 属性面板（内容/变换/对齐/排版/尺寸/工艺/排列/警示）
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { store, useStore } from '../state/store.js';
 import { geomOf, creaseSegsOf } from '../dieline/geom.js';
 import { heroPanelOf } from '../dieline/hero.js';
-import { bboxOf, warnsOf, dpiOf, FIN, layerNameOf } from '../design/layers.js';
+import { bboxOf, warnsOf, dpiOf, FIN, layerNameOf, randomImageName } from '../design/layers.js';
 import { bboxOfPts, containerOfLayer } from '../design/containers.js';
 import { embDirOf } from '../design/emboss.js';
 import { uploadImage, imageFilesOf, readImageFile, imageLayerAt } from '../design/images.js';
+import { fitSheetImage } from '../design/sheetFit.js';
 import { SheetCanvas } from './SheetCanvas.jsx';
 import { ST, Block, Note, inputSt, selectSt, btnSt } from './widgets.jsx';
 
-export function DesignView() {
+export function DesignView({ allowSheetImage = false, preview = null }) {
   const s = useStore();
+  const sheetInput = useRef(null);
   const m = store.mat();
   const g = geomOf(s, m.t);
   const hero = heroPanelOf(g);
@@ -53,7 +55,7 @@ export function DesignView() {
   });
   const addL = mk => store.set(st => {
     const nl = mk(st.seq, hero);
-    const bound = nl.panelId == null && hero ? { ...nl, panelId: hero.panelId } : nl;
+    const bound = nl.scope !== 'sheet' && nl.panelId == null && hero ? { ...nl, panelId: hero.panelId } : nl;
     return { layers: st.layers.concat([bound]), seq: st.seq + 1, sel: bound.id };
   });
   const moveL = d => store.set(st => {
@@ -75,6 +77,23 @@ export function DesignView() {
     upd({ ...(tx != null ? { x: sel.x + (tx - b[0]) } : {}), ...(ty2 != null ? { y: sel.y + (ty2 - b[1]) } : {}) });
   };
   const numIn = fn => e => { const v = parseFloat(e.target.value); if (!isNaN(v)) fn(v); };
+  const uploadSheet = async e => {
+    const file = imageFilesOf(e.target.files)[0]; e.target.value = '';
+    if (!file) return;
+    try {
+      const asset = await readImageFile(file);
+      const fit = fitSheetImage(asset, geomOf(store.get(), store.mat().t));
+      addL(id => {
+        const name = randomImageName();
+        return { id, kind: 'image', scope: 'sheet', name, content: name, finish: 'none', visible: true, ...asset, ...fit };
+      });
+    } catch (error) { alert(error.message || '图片读取失败，请使用 PNG、JPG 或 WebP 文件。'); }
+  };
+  const fitSelectedSheet = () => {
+    if (!sel || sel.locked) return;
+    try { upd(fitSheetImage(sel, g)); }
+    catch (error) { alert(error.message || '图片匹配失败，请重新导入图片。'); }
+  };
   const dropImages = async (files, point, panel) => {
     const imageFiles = imageFilesOf(files); if (!imageFiles.length || !panel) return;
     try {
@@ -101,6 +120,10 @@ export function DesignView() {
           <button onClick={() => uploadImage(addL)} style={{ ...btnSt, flex: 1, fontSize: 11.5 }}>+ 图片</button>
           <button onClick={() => addL((id, hp) => { const w = Math.min(30, hp.safeBox[2] - hp.safeBox[0]), h = Math.min(8, hp.safeBox[3] - hp.safeBox[1]); return { id, kind: 'shape', x: hp.cx - w / 2, y: hp.cy - h / 2, w, h, content: '色块', color: '#9a5b1f', finish: 'none', visible: true }; })} style={{ ...btnSt, flex: 1, fontSize: 11.5 }}>+ 色块</button>
         </div>
+        {allowSheetImage && <>
+          <input ref={sheetInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={uploadSheet} />
+          <button onClick={() => sheetInput.current?.click()} style={{ ...btnSt, width: '100%', marginBottom: 10, fontSize: 11.5 }}>+ 整版图片</button>
+        </>}
         <div style={{ display: 'grid', gap: 5 }}>
           {s.layers.slice().reverse().map(l => {
             const warn = warnsOf(l, creaseSegs, g.sbb).length > 0;
@@ -127,6 +150,7 @@ export function DesignView() {
     <SheetCanvas view="design" g={g} onImageDrop={dropImages} />
 
     <div style={{ width: 258, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
+      {preview}
       {!sel && <div style={{ padding: '20px 14px', fontSize: 12, color: '#8a8071', lineHeight: 1.7 }}>未选中图层。点击画布中的元素或左侧图层列表进行编辑。</div>}
       {sel && (<>
         <Block>
@@ -148,7 +172,9 @@ export function DesignView() {
           <input type="range" min="0" max="100" value={Math.round((sel.opacity == null ? 1 : sel.opacity) * 100)} onChange={numIn(v => upd({ opacity: Math.min(1, Math.max(0, v / 100)) }))} style={{ width: '100%', accentColor: '#9a5b1f', margin: 0 }} />
         </Block>
         <Block>
-          <ST>对齐 · 所在面板</ST>
+          <ST>对齐 · {sel.scope === 'sheet' ? '整版刀模' : '所在面板'}</ST>
+          {allowSheetImage && sel.kind === 'image' && sel.scope === 'sheet' && <button onClick={fitSelectedSheet} disabled={sel.locked}
+            title="按透明轮廓匹配大小和方向；普通图片按宽高比例适配" style={{ ...btnSt, width: '100%', marginBottom: 8 }}>自动匹配刀模</button>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 5 }}>
             {[['l', '⊢', '左对齐'], ['cx', '↔', '水平居中'], ['r', '⊣', '右对齐'], ['t', '⊤', '顶对齐'], ['cy', '↕', '垂直居中'], ['b', '⊥', '底对齐']].map(x => (
               <button key={x[0]} onClick={() => alignSel(x[0])} title={x[2]} style={{ ...btnSt, fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{x[1]}</button>

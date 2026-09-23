@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import { parseDxf, decodeDxf } from '../src/dieline/dxf.js';
 import { prepareCustom } from '../src/dieline/custom.js';
 import { geomOf } from '../src/dieline/geom.js';
-import { makeProject, projectStateOf } from '../src/projects/projects.js';
-import { containerAt, clipPtsOf } from '../src/design/containers.js';
-import { drawLayer } from '../src/design/layers.js';
+import { chooseProjectFile, makeProject, projectStateOf } from '../src/projects/projects.js';
+import { containerAt, clipPtsOf, containerOfLayer, bindLayersToContainers, reflowLayersToContainers } from '../src/design/containers.js';
+import { drawLayer, warnsOf, dpiOf } from '../src/design/layers.js';
 import { pageBoxes } from '../src/export/pdf.js';
 import * as THREE from 'three';
 import { CustomFolder } from '../src/render3d/customFold.js';
@@ -60,6 +60,24 @@ const canvas = { save() {}, restore() {}, beginPath() {}, moveTo() { rings++; },
 drawLayer(canvas, { kind: 'shape', x: 0, y: 0, w: 40, h: 20 }, 1, undefined, clipPtsOf(holed.panels, { panelId: holed.root }));
 assert.equal(rings, 2); assert.equal(rule, 'evenodd', 'Artwork clipping must exclude the hole in PDF and 3D atlas.');
 
+const sheetLayer = { id: 1, kind: 'image', scope: 'sheet', x: 0, y: 0, w: 40, h: 20, visible: true, finish: 'none' };
+const rotatedSheet = { ...sheetLayer, x: 10, y: -10, w: 20, h: 40, rot: 90 };
+assert.ok(!warnsOf(rotatedSheet, [], g.sbb).some(w => w.startsWith('超出版面')), 'A quarter-turned fitted sheet must not report unrotated bounds.');
+assert.ok(warnsOf({ ...rotatedSheet, x: 12 }, [], g.sbb).some(w => w.startsWith('超出版面')));
+assert.equal(dpiOf({ ...sheetLayer, pxw: 1200, w: 50.8, crop: [0.25, 0, 0.5, 1] }), 300, 'DPI must use pixels remaining after alpha trimming/cropping.');
+assert.equal(containerOfLayer(g, sheetLayer), null);
+assert.equal(bindLayersToContainers([sheetLayer], g)[0], sheetLayer, 'Whole-sheet artwork must remain unbound after import.');
+assert.equal(clipPtsOf(g.panels, sheetLayer).holes.length, 1, 'Whole-sheet artwork must cover both sides of a crease.');
+rings = 0; rule = undefined;
+drawLayer(canvas, { ...sheetLayer, kind: 'shape' }, 1, undefined, clipPtsOf(holed.panels, sheetLayer));
+assert.equal(rings, 2); assert.equal(rule, 'evenodd', 'Whole-sheet artwork must retain cut-out holes in print and 3D.');
+const scaledSheet = reflowLayersToContainers([sheetLayer], g, { ...g, sbb: [10, 20, 90, 60] })[0];
+assert.deepEqual([scaledSheet.x, scaledSheet.y, scaledSheet.w, scaledSheet.h, scaledSheet.panelId], [10, 20, 80, 40, undefined]);
+const sheetRestored = await projectStateOf(JSON.parse(JSON.stringify(makeProject({ ...state, layers: [sheetLayer] }))));
+assert.equal(sheetRestored.layers[0].scope, 'sheet');
+assert.equal(containerOfLayer(g, sheetRestored.layers[0]), null);
+assert.ok(containerOfLayer(g, { ...sheetLayer, scope: undefined }), 'Ordinary artwork must still bind to a single panel.');
+
 custom.angles[custom.hinges[0].id] = -65;
 const project = JSON.parse(JSON.stringify(makeProject(state, { name: 'DXF roundtrip' })));
 assert.equal(project.box.custom.panels, undefined, 'Only source geometry and settings need persistence.');
@@ -68,6 +86,38 @@ assert.deepEqual(restored.custom.segs, custom.segs);
 assert.deepEqual(restored.custom.angles, custom.angles);
 assert.deepEqual(restored.custom.panels, custom.panels);
 assert.equal(geomOf(restored, 0.22).cutPath, g.cutPath);
+
+// A picker must stay attached until success, cancellation or failure, then leave no hidden input behind.
+const originalDocument = globalThis.document, pickerNodes = new Set();
+let picker, clickError = false;
+globalThis.document = {
+  body: { appendChild(node) { pickerNodes.add(node); } },
+  createElement(tag) {
+    assert.equal(tag, 'input');
+    return picker = {
+      remove() { pickerNodes.delete(this); },
+      click() { assert.ok(pickerNodes.has(this), 'Project input must be attached before opening.'); if (clickError) throw new Error('picker unavailable'); }
+    };
+  }
+};
+try {
+  let result = chooseProjectFile();
+  picker.files = [{ name: 'test.boxproj', text: async () => JSON.stringify(project) }];
+  await picker.onchange();
+  assert.deepEqual((await result).box, project.box);
+  assert.equal(pickerNodes.size, 0);
+  result = chooseProjectFile(); picker.oncancel();
+  assert.equal(await result, null); assert.equal(pickerNodes.size, 0);
+  result = chooseProjectFile(); picker.files = []; await picker.onchange();
+  assert.equal(await result, null); assert.equal(pickerNodes.size, 0);
+  result = chooseProjectFile();
+  picker.files = [{ text: async () => '{}' }]; await picker.onchange();
+  await assert.rejects(result, /工程文件/); assert.equal(pickerNodes.size, 0);
+  clickError = true;
+  await assert.rejects(chooseProjectFile(), /picker unavailable/); assert.equal(pickerNodes.size, 0);
+} finally {
+  if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
+}
 
 if (process.argv[2]) {
   const filename = process.argv[2], bytes = readFileSync(filename);

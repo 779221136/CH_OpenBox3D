@@ -32,22 +32,23 @@ export function makeStageGround(id, renderer) {
   mesh.position.y = -0.6; // 阴影承接网（ShadowMaterial）在 y=0，避免 z-fight
   mesh.receiveShadow = false; // 阴影统一由 y=0 的透明承影网合成，避免实体地面再接收一次形成过黑双影
   const loader = new THREE.TextureLoader(), texs = [];
-  let disposed = false, pending = 3;
+  let disposed = false, pending = 3, settleReady;
+  mesh.userData.ready = new Promise(resolve => { settleReady = resolve; });
   const mk = (file, srgb) => {
     const t = loader.load(asset('/textures/' + file), () => {
-      if (disposed) { t.dispose(); return; }
+      if (disposed) { t.dispose(); settleReady(false); return; }
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.repeat.set(repeat, repeat);
       t.anisotropy = renderer.capabilities.getMaxAnisotropy();
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-      if (--pending === 0) { mat.map = texs[0]; mat.roughnessMap = texs[2]; mat.normalMap = texs[1]; mat.roughness = 1; mat.color.set(0xffffff); mat.needsUpdate = true; }
-    });
+      if (--pending === 0) { mat.map = texs[0]; mat.roughnessMap = texs[2]; mat.normalMap = texs[1]; mat.roughness = 1; mat.color.set(0xffffff); mat.needsUpdate = true; settleReady(true); }
+    }, undefined, () => settleReady(false));
     texs.push(t);
     return t;
   };
   mk(spec.id + '_diff_1k.jpg', true);
   mk(spec.id + '_nor_gl_1k.jpg', false);
   mk(spec.id + '_arm_1k.jpg', false);
-  mesh.userData.dispose = () => { disposed = true; geo.dispose(); mat.dispose(); texs.forEach(t => t.dispose()); };
+  mesh.userData.dispose = () => { disposed = true; settleReady(false); geo.dispose(); mat.dispose(); texs.forEach(t => t.dispose()); };
   return mesh;
 }

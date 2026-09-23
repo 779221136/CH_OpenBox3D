@@ -20,7 +20,7 @@ export function bboxOf(l) {
 
 export function dpiOf(l) {
   if (l.kind !== 'image' || !l.pxw) return 0;
-  return Math.round(l.pxw / (l.w / 25.4));
+  return Math.round(l.pxw * (l.crop?.[2] ?? 1) / (l.w / 25.4));
 }
 
 // 图集 UV 用：每个面板（fill 多边形）的包围盒，供 3D 与导出对齐
@@ -33,7 +33,13 @@ export function panelBoxes(g) {
 }
 
 export function warnsOf(l, creaseSegs, sbb) {
-  const b = bboxOf(l), out = [];
+  let b = bboxOf(l);
+  const out = [];
+  if (l.scope === 'sheet' && l.rot) {
+    const r = l.rot * Math.PI / 180, co = Math.abs(Math.cos(r)), si = Math.abs(Math.sin(r));
+    const w = b[2] * co + b[3] * si, h = b[2] * si + b[3] * co;
+    b = [b[0] + (b[2] - w) / 2, b[1] + (b[3] - h) / 2, w, h];
+  }
   // 已绑定容器的图层会在所有渲染/导出链路统一裁切；越过容器边界不再是生产警示。
   if (l.panelId == null) {
     for (const seg2 of creaseSegs) {

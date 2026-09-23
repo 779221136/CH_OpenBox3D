@@ -17,6 +17,7 @@ export class CustomFolder {
   }
 
   build(custom, t, faceMat, coreMat) {
+    this.setSelectedHinge(null);
     if (!custom?.panels?.length) throw new Error('自定义刀模没有可折叠面板。');
     const panels = new Map(), centers = new Map();
     for (const panel of custom.panels) {
@@ -86,6 +87,22 @@ export class CustomFolder {
     this.maxDepth = Math.max(1, ...this.nodes.map(n => n.depth));
     this.applyFold(custom, 0);
     return this.root;
+  }
+
+  setSelectedHinge(id) {
+    if (id === this.selectedHingeId) return;
+    if (this.hingeHighlight) {
+      this.hingeHighlight.removeFromParent();
+      this.hingeHighlight.geometry.dispose(); this.hingeHighlight.material.dispose();
+      this.hingeHighlight = null;
+    }
+    this.selectedHingeId = null;
+    const node = this.nodes?.find(n => n.hinge.id === id);
+    if (!node) return;
+    const points = node.hinge.edge.map(([x, y]) => new THREE.Vector3(x - this.origin[0], this.origin[1] - y, 0));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: '#ff7a20', depthTest: false, depthWrite: false, toneMapped: false }));
+    line.renderOrder = 10; line.userData.hingeId = id;
+    node.group.add(line); this.hingeHighlight = line; this.selectedHingeId = id;
   }
 
   applyFold(custom, fold) {

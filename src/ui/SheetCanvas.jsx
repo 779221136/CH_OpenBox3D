@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { store, useStore } from '../state/store.js';
 import { asset } from '../asset.js';
 import { bboxOf } from '../design/layers.js';
-import { bboxOfPts, containerAt, containerOfLayer } from '../design/containers.js';
+import { bboxOfPts, containerAt, containerOfLayer, clipPtsOf } from '../design/containers.js';
 
 export function SheetCanvas({ view, g, children, onImageDrop }) {
   const s = useStore();
@@ -14,6 +14,7 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
   const [dropPanel, setDropPanel] = useState(null);
   const k = s.k || 1;
   const editOn = s.editMode && view === 'structure';
+  const sheetClip = s.layers.some(l => l.scope === 'sheet') ? clipPtsOf(g.panels, { scope: 'sheet' }) : null;
   const hasImageDrag = e => Array.from((e.dataTransfer && e.dataTransfer.items) || []).some(it => it.kind === 'file' && /^image\/(png|jpeg|webp)$/i.test(it.type));
 
   const mmPt = e => {
@@ -167,7 +168,7 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
     const d = drag.current;
     if (d && d.type === 'move' && e) {
       const hit = containerAt(g, mmPt(e));
-      if (hit) store.set(st => ({ layers: st.layers.map(l => l.id === d.id && l.panelId !== hit.panelId ? { ...l, panelId: hit.panelId } : l) }));
+      if (hit) store.set(st => ({ layers: st.layers.map(l => l.id === d.id && l.scope !== 'sheet' && l.panelId !== hit.panelId ? { ...l, panelId: hit.panelId } : l) }));
     }
     if (e) try { elRef.current.releasePointerCapture(e.pointerId); } catch (_) { /* 已释放或未捕获 */ }
     drag.current = null; setSnapG(null);
@@ -256,7 +257,7 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
     if (l.finish === 'uv') els.push(<rect key={l.id + 'uv'} x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#5a9bc4" strokeWidth={1} strokeDasharray="4 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />);
     if (l.finish === 'gloss') els.push(<rect key={l.id + 'gloss'} x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#28a7a1" strokeWidth={1} strokeDasharray="7 2 1 2" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />);
     const panel = containerOfLayer(g, l);
-    const clipId = panel ? 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-') : '';
+    const clipId = l.scope === 'sheet' ? 'design-sheet' : panel ? 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-') : '';
     return <g key={l.id} clipPath={clipId ? 'url(#' + clipId + ')' : undefined}>{els}</g>;
   };
 
@@ -295,6 +296,7 @@ export function SheetCanvas({ view, g, children, onImageDrop }) {
       <svg width="100%" height="100%" style={{ display: 'block' }}>
         {view === 'design' && (
           <defs>
+            {sheetClip && <clipPath id="design-sheet" clipPathUnits="userSpaceOnUse"><path clipRule="evenodd" d={[sheetClip.pts, ...sheetClip.holes].map(ring => 'M' + ring.map(p => p.join(' ')).join('L') + 'Z').join(' ')} /></clipPath>}
             <linearGradient id="foilG" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor="#E9CB6E" /><stop offset="0.5" stopColor="#B08A1E" /><stop offset="1" stopColor="#E3BE55" />
             </linearGradient>
