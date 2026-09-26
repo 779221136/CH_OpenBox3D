@@ -2,6 +2,7 @@
 import React from 'react';
 import { geomOf } from '../dieline/geom.js';
 import { BoxCanvas } from './BoxCanvas.jsx';
+import { paperPreset, filmPreset } from './presets.js';
 
 const EMPTY_LAYERS = [];
 
@@ -16,29 +17,37 @@ export function boxPreviewContextOf(s, m) {
   return { g, bakeKey, sbbKey: g.sbb.join(',') };
 }
 
-export function BoxPreview({ s, m, context, engineRef, fitFold = false, shadowSamples = 5, lightEdit = '0', selLight = '', onLightSelect, onLightEdit, selectedHingeId = null, hideArtwork = false }) {
+export function boxPreviewPropsOf(s, m, { context, fitFold = false, shadowSamples = 5, lightEdit = '0', selLight = '', onLightSelect, onLightEdit, selectedHingeId = null, hideArtwork = false } = {}) {
+  if (hideArtwork) {
+    const paper = paperPreset(m.paper), film = filmPreset('none');
+    // 刀模页显示结构纸材；局部派生，保留设计/渲染页的覆膜、底色和工艺设置。
+    s = { ...s, paper3d: paper.id, paperTint3d: '', film3d: film.id, check: 'art',
+      surfaceRoughness: paper.roughness, grainStrength: paper.grainStrength, grainScale: paper.grainMm,
+      filmClearcoat3d: film.clearcoat, filmClearcoatRoughness3d: film.clearcoatRoughness,
+      filmRoughnessFactor3d: film.roughnessFactor, filmSheen3d: film.sheen };
+  }
   const layers = hideArtwork ? EMPTY_LAYERS : s.layers;
   const ctx = hideArtwork ? boxPreviewContextOf({ ...s, layers }, m) : context || boxPreviewContextOf(s, m);
-  return <BoxCanvas
-    l={s.L} w={s.W} h={s.H} t={m.t} tpl={s.tpl} custom={s.custom} fold={s.fold} paper={s.paper3d} film={s.film3d} glue={s.glue} paperTint={s.paperTint3d}
-    layers={layers} panels={ctx.g.panels} sbb={ctx.g.sbb} bleed={s.bleed} sbbKey={ctx.sbbKey} bakeKey={ctx.bakeKey} selectedHingeId={selectedHingeId}
-    foilOn={s.fx.foil ? '1' : '0'} suvOn={s.fx.suv ? '1' : '0'} glossOn={s.fx.gloss !== false ? '1' : '0'} embOn={s.fx.emb ? '1' : '0'} holoOn={s.fx.holo !== false ? '1' : '0'}
-    spin={s.spin ? '1' : '0'} check={s.check}
-    studio={s.studio3d} environment={s.environment3d} stage={s.stage3d} exposure={s.expo3d}
-    environmentIntensity={s.envIntensity3d} environmentRotation={s.envRotation3d}
-    backgroundShown={s.showEnvironmentBackground ? '1' : '0'} backgroundMode={s.backgroundMode3d} backgroundColor={s.backgroundColor3d} backgroundBlur={s.backgroundBlur3d}
-    domeSpec={s.domeSpec3d} cameraType={s.cameraProjection3d} fov={s.fov3d}
-    lightsSpec={s.lightsSpec3d}
-    shadowSoftness={s.shadowSoftness3d} shadowOpacity={s.shadowOpacity3d}
-    surfaceRoughness={s.surfaceRoughness} grainStrength={s.grainStrength} grainScale={s.grainScale}
-    filmClearcoat={s.filmClearcoat3d} filmClearcoatRoughness={s.filmClearcoatRoughness3d} filmRoughnessFactor={s.filmRoughnessFactor3d} filmSheen={s.filmSheen3d}
-    foilMetalness={s.foilMetalness3d} foilRoughness={s.foilRoughness3d} foilColor={s.foilColor3d} silverColor={s.silverColor3d} holoColor={s.holoColor3d} iridescence={s.iridescence3d} holoSpan={s.holoSpan3d} holoRainbow={s.holoRainbow3d}
-    uvClearcoat={s.uvClearcoat3d} uvRoughness={s.uvRoughness3d} glossRoughness={s.glossRoughness3d}
-    embNormalStrength={s.embNormalStrength3d} embDisplacementStrength={s.embDisplacementStrength3d}
-    toneMapping={s.toneMapping3d}
-    shadowSamples={shadowSamples}
-    lightEdit={lightEdit} selLight={selLight} onLightSelect={onLightSelect} onLightEdit={onLightEdit}
-    fitFold={fitFold ? '1' : '0'}
-    embDepth={'' + s.embDepth} embSharpness={s.embSharpness3d} embDir={s.embDir} embBoost={s.embBoost ? '1' : '0'}
-    engineRef={engineRef} />;
+  return {
+    l: s.L, w: s.W, h: s.H, t: m.t, tpl: s.tpl, custom: s.custom, fold: s.fold, paper: s.paper3d, film: s.film3d, glue: s.glue, paperTint: s.paperTint3d,
+    layers, panels: ctx.g.panels, sbb: ctx.g.sbb, bleed: s.bleed, sbbKey: ctx.sbbKey, bakeKey: ctx.bakeKey, selectedHingeId,
+    foilOn: s.fx.foil ? '1' : '0', suvOn: s.fx.suv ? '1' : '0', glossOn: s.fx.gloss !== false ? '1' : '0', embOn: s.fx.emb ? '1' : '0', holoOn: s.fx.holo !== false ? '1' : '0',
+    spin: s.spin ? '1' : '0', check: s.check,
+    studio: s.studio3d, environment: s.environment3d, stage: s.stage3d, exposure: s.expo3d,
+    environmentIntensity: s.envIntensity3d, environmentRotation: s.envRotation3d,
+    backgroundShown: s.showEnvironmentBackground ? '1' : '0', backgroundMode: s.backgroundMode3d, backgroundColor: s.backgroundColor3d, backgroundBlur: s.backgroundBlur3d,
+    domeSpec: s.domeSpec3d, cameraType: s.cameraProjection3d, fov: s.fov3d, lightsSpec: s.lightsSpec3d,
+    shadowSoftness: s.shadowSoftness3d, shadowOpacity: s.shadowOpacity3d,
+    surfaceRoughness: s.surfaceRoughness, grainStrength: s.grainStrength, grainScale: s.grainScale,
+    filmClearcoat: s.filmClearcoat3d, filmClearcoatRoughness: s.filmClearcoatRoughness3d, filmRoughnessFactor: s.filmRoughnessFactor3d, filmSheen: s.filmSheen3d,
+    foilMetalness: s.foilMetalness3d, foilRoughness: s.foilRoughness3d, foilColor: s.foilColor3d, silverColor: s.silverColor3d, holoColor: s.holoColor3d, iridescence: s.iridescence3d, holoSpan: s.holoSpan3d, holoRainbow: s.holoRainbow3d,
+    uvClearcoat: s.uvClearcoat3d, uvRoughness: s.uvRoughness3d, glossRoughness: s.glossRoughness3d,
+    embNormalStrength: s.embNormalStrength3d, embDisplacementStrength: s.embDisplacementStrength3d, toneMapping: s.toneMapping3d,
+    shadowSamples, lightEdit, selLight, onLightSelect, onLightEdit, fitFold: fitFold ? '1' : '0',
+    embDepth: '' + s.embDepth, embSharpness: s.embSharpness3d, embDir: s.embDir, embBoost: s.embBoost ? '1' : '0'
+  };
+}
+
+export function BoxPreview({ s, m, engineRef, ...options }) {
+  return <BoxCanvas {...boxPreviewPropsOf(s, m, options)} engineRef={engineRef} />;
 }

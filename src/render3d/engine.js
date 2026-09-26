@@ -35,6 +35,8 @@ export class BoxEngine {
     this.props = { ...props };
     if (!this.ready) return;
     const p = this.props;
+    // 渲染方案独立拥有模型；React 的影棚参数不能覆盖复制/替换后的包装。
+    if (!this.renderScene) {
     if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey || prev.custom !== p.custom) {
       clearTimeout(this._bt);
       this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); }, 600);
@@ -54,6 +56,7 @@ export class BoxEngine {
     if (prev.film !== p.film || FILM_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.updateFilm();
     if (prev.foilRoughness !== p.foilRoughness) this.updateFoilRoughness();
     if (prev.check !== p.check || prev.embOn !== p.embOn || prev.embBoost !== p.embBoost || prev.embDepth !== p.embDepth || prev.film !== p.film || MATERIAL_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.applyFlags();
+    }
     if (prev.environment !== p.environment && this.studio) this.studio.setEnvironment(p.environment);
     if (prev.lightsSpec !== p.lightsSpec && this.studio) { this.studio.setLights(p.lightsSpec); this.studio.updateHelpers(); }
     if (prev.lightEdit !== p.lightEdit && this.studio) this.studio.setHelpersVisible(p.lightEdit === '1');
@@ -135,6 +138,7 @@ export class BoxEngine {
       return this._ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), pt) ? pt : null;
     };
     r.domElement.addEventListener('pointerdown', e => {
+      if (this.renderScene) return;
       if (e.button !== 0) return;
       this._fitGoal = null; // 用户接管（移动盒子/转盒走自定义分支，不进 OrbitControls start）：中断自动适配过渡
       if (this._mode === 'move') {
@@ -212,7 +216,7 @@ export class BoxEngine {
       const now = performance.now(), dt = this._loopAt ? Math.min((now - this._loopAt) / 1000, 0.05) : 1 / 60;
       this._loopAt = now; this.stepFrame(dt);
       if (this.props.spin === '1' && this.boxRoot && Date.now() > (this._pauseSpin || 0)) this.turnBox(0.0045);
-      this.controls.update(); r.render(this.scene, this.camera);
+      this.controls.update(); this.renderScene?.updateHelpers(); r.render(this.scene, this.camera);
     };
     loop();
   }
@@ -279,6 +283,7 @@ export class BoxEngine {
     const next = cameraTypeOf(type);
     if (!this.camera || (next === 'orthographic') === !!this.camera.isOrthographicCamera) return;
     const T = this.T, old = this.camera, target = this.controls.target.clone();
+    if (old.isPerspectiveCamera) this._viewFov = old.fov;
     const dir = old.position.clone().sub(target);
     if (dir.lengthSq() < 1e-8) dir.set(1, 0.7, 1);
     const distance = Math.max(1, dir.length()), unit = dir.normalize();
@@ -299,11 +304,71 @@ export class BoxEngine {
     }
     camera.up.copy(old.up);
     this.camera = camera;
+    if (this.renderScene?.transformControls) this.renderScene.transformControls.camera = camera;
     this.controls.object = camera;
     this.controls.minDistance = 15; this.controls.maxDistance = 5000;
     this.controls.minZoom = 0.05; this.controls.maxZoom = 40;
     this.resize();
     this.controls.update();
+  }
+
+  captureCamera() {
+    if (!this.camera || !this.controls) return null;
+    return {
+      position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: this.camera.up.toArray(),
+      projection: this.camera.isOrthographicCamera ? 'orthographic' : 'perspective',
+      fov: this.camera.fov || this._viewFov || this.num('fov', 35), zoom: this.camera.zoom,
+      orthoHeight: this._orthoHeight || 100
+    };
+  }
+
+  applyCamera(view) {
+    const vector = v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+    if (!view || !vector(view.position) || !vector(view.target) || !vector(view.up) || Math.hypot(...view.up) < 1e-8 ||
+        !['perspective', 'orthographic'].includes(view.projection) || !Number.isFinite(view.fov) || view.fov <= 0 || view.fov >= 180 ||
+        !Number.isFinite(view.zoom) || view.zoom <= 0 || !Number.isFinite(view.orthoHeight) || view.orthoHeight <= 0) throw new Error('保存的视角数据无效。');
+    this._fitGoal = null;
+    // 先清空 OrbitControls 上一次拖动的阻尼，避免保存视角恢复后继续漂移。
+    const damping = this.controls.enableDamping;
+    this.controls.enableDamping = false; this.controls.update();
+    this.switchCamera(view.projection);
+    this.camera.position.fromArray(view.position); this.controls.target.fromArray(view.target); this.camera.up.fromArray(view.up).normalize();
+    this._viewFov = view.fov;
+    if (this.camera.isPerspectiveCamera) this.camera.fov = view.fov;
+    this.camera.zoom = view.zoom; this._orthoHeight = view.orthoHeight;
+    this.resize();
+    this.controls.update(); this.controls.enableDamping = damping;
+  }
+
+  // 只创建模型资源，复用正式折叠/烘焙管线；不创建相机、WebGLRenderer 或画布。
+  createModel(props, takeCurrent = false) {
+    const model = Object.create(BoxEngine.prototype);
+    model.T = THREE; model.props = { ...props }; model.scene = new THREE.Group();
+    if (takeCurrent) {
+      for (const key of ['faceMat', 'coreMat', 'folder', 'boxRoot', 'pieces', 'baked', '_tex', '_dims', '_lastBakeInput']) {
+        model[key] = this[key]; this[key] = null;
+      }
+      model.folder?.setSelectedHinge?.(null);
+      if (model.boxRoot) model.scene.add(model.boxRoot);
+    } else {
+      model.faceMat = new THREE.MeshPhysicalMaterial({ color: 0xf4f1e8, roughness: 0.5 });
+      model.coreMat = new THREE.MeshStandardMaterial({ color: 0xd8cdb2, roughness: 0.92 });
+    }
+    model.root = model.scene;
+    model.dispose = () => {
+      model.folder?.setSelectedHinge?.(null);
+      model.root.removeFromParent();
+      model.root.traverse(o => o.geometry?.dispose());
+      disposeTextures(model._tex); model.faceMat?.dispose(); model.coreMat?.dispose();
+    };
+    if (!takeCurrent) {
+      try {
+        model.build(); model.rebake(); model.applyFold();
+        const center = new THREE.Box3().setFromObject(model.boxRoot, true).getCenter(new THREE.Vector3());
+        model.boxRoot.position.x -= center.x; model.boxRoot.position.z -= center.z;
+      } catch (error) { model.dispose(); throw error; }
+    }
+    return model;
   }
 
   // 绕盒心水平转盒（钉桌面）：枢轴=盒心，位置随动补偿使盒心原地不漂；d 为增量弧度
@@ -448,6 +513,10 @@ export class BoxEngine {
   }
 
   setMode(m) {
+    if (this.renderScene && (m === 'move' || m === 'turn')) {
+      this.renderScene.setTransformMode(m === 'move' ? 'translate' : 'rotate');
+      m = 'rotate';
+    }
     this._mode = m;
     const T = this.T;
     this.controls.mouseButtons.LEFT = m === 'rotate' ? T.MOUSE.ROTATE : m === 'pan' ? T.MOUSE.PAN : -1;
@@ -476,6 +545,8 @@ export class BoxEngine {
     this.controls.update();
   }
   frame(smooth = false) {
+    if (this.renderScene) return this.renderScene.frame();
+    if (!this.boxRoot) return;
     const T = this.T;
     const bb = new T.Box3().setFromObject(this.boxRoot, this.props.tpl === 'custom');
     const c = bb.getCenter(new T.Vector3()), sz = bb.getSize(new T.Vector3());
@@ -538,11 +609,12 @@ export class BoxEngine {
     if (this._ltUp) this.el.removeEventListener('pointerup', this._ltUp, true);
     this._ltDrag = null; this._ltClick = null;
     clearTimeout(this._bt); clearTimeout(this._at); clearTimeout(this._ft);
+    this.renderScene?.dispose();
     this.setStage('none');
     if (this.studio) { this.studio.dispose(); this.studio = null; }
     disposeTextures(this._tex);
     if (this.controls) this.controls.dispose();
-    this.faceMat.dispose(); this.coreMat.dispose();
+    this.faceMat?.dispose(); this.coreMat?.dispose();
     this.folder?.setSelectedHinge?.(null);
     if (this.boxRoot) this.boxRoot.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     if (this.renderer) { this.renderer.dispose(); this.renderer.forceContextLoss(); if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement); }
