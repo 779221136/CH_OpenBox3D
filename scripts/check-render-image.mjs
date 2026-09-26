@@ -13,6 +13,7 @@ for (const orthographic of [false, true]) for (const fail of [false, true]) {
   const beforeCamera = camera.toJSON(), scene = { background: new Color('#ddccbb') }, background = scene.background;
   let size = new Vector2(800, 600), ratio = 2, alpha = 1, color = new Color('#ab1234'), viewport = new Vector4(0, 0, 800, 600), scissor = new Vector4(1, 2, 300, 400), scissorTest = true;
   const ground = { visible: true }, renders = [];
+  const renderScene = { helpersVisible: true, setHelpersVisible(value) { this.helpersVisible = value; } };
   const renderer = {
     getContext: () => ({ isContextLost: () => false }), getSize: v => v.copy(size), getPixelRatio: () => ratio,
     getViewport: v => v.copy(viewport), getScissor: v => v.copy(scissor), getScissorTest: () => scissorTest,
@@ -22,15 +23,16 @@ for (const orthographic of [false, true]) for (const fail of [false, true]) {
     setViewport: v => { viewport.copy(v); }, setScissor: v => { scissor.copy(v); }, setScissorTest: v => { scissorTest = v; },
     render: (_, c) => { renders.push(c); },
     domElement: { toDataURL: type => {
-      assert.equal(type, 'image/png'); assert.deepEqual(size.toArray(), [2048, 1152]); assert.equal(ratio, 1);
+      assert.equal(type, 'image/png'); assert.equal(renderScene.helpersVisible, false); assert.deepEqual(size.toArray(), [2048, 1152]); assert.equal(ratio, 1);
       assert.equal(scene.background, null); assert.equal(alpha, 0); assert.equal(ground.visible, false); assert.equal(scissorTest, false);
       if (fail) throw new Error('encode failure');
       return 'data:image/png;base64,test';
     } }
   };
-  const engine = { ready: true, renderer, scene, camera, stageGround: ground };
+  const engine = { ready: true, renderer, scene, camera, stageGround: ground, renderScene };
   if (fail) assert.throws(() => captureRenderPng(engine, { width: 2048, height: 1152, transparent: true }), /encode failure/);
   else assert.equal(captureRenderPng(engine, { width: 2048, height: 1152, transparent: true }), 'data:image/png;base64,test');
+  assert.equal(renderScene.helpersVisible, true, 'Selection helpers must be restored even when PNG encoding fails.');
   assert.deepEqual(camera.toJSON(), beforeCamera, 'The preview camera and zoom must not change.');
   assert.equal(renders.at(-1), camera, 'The restored preview is rendered again.');
   if (orthographic) assert.ok(Math.abs((renders[0].right - renders[0].left) / (renders[0].top - renders[0].bottom) - 2048 / 1152) < 1e-12);
