@@ -10,12 +10,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run check:template-sync && npm run check:dxf && npm run check:render && npm run check:sheet-fit",
+    "prebuild": "npm run check:template-sync && npm run check:dxf && npm run check:render && npm run check:sheet-fit && npm run check:plans",
     "build": "vite build",
     "build:pages": "npm run check:template-sync && vite build --base=/OpenBox3D/",
     "check:template-sync": "node scripts/check-template-sync.mjs",
     "check:dxf": "node scripts/check-dxf.mjs && node scripts/check-custom-fold.mjs",
-    "check:render": "node scripts/check-render-image.mjs",
+    "check:render": "node scripts/check-render-image.mjs && node scripts/check-render-scene.mjs && node scripts/check-structure-material.mjs",
+    "check:plans": "node scripts/check-saved-plans.mjs",
     "check:sheet-fit": "node scripts/check-sheet-fit.mjs",
     "preset:from": "node scripts/boxproj-to-preset.mjs",
     "preview": "vite preview"
