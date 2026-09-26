@@ -2,14 +2,15 @@
 // 纯函数风格：f(params, board) → 线段/填充/标注集合，几何一律以 mm 为基本单位
 
 export const MATS = [
-  { id: 'art200', name: '薄铜版纸 200g', t: 0.22, bleed: 3, note: '轻薄彩盒/裱纸' },
-  { id: 'sbs350', name: '白卡 350g', t: 0.45, bleed: 3, note: '折叠纸盒' },
-  { id: 'sbs400', name: '白卡 400g', t: 0.5, bleed: 3, note: '折叠纸盒' },
-  { id: 'art300', name: '铜版纸 300g', t: 0.35, bleed: 3, note: '裱糊/卡盒' },
-  { id: 'kraft350', name: '牛皮纸 350g', t: 0.42, bleed: 3, note: '素面环保' },
-  { id: 'fluteF', name: 'F 楞微瓦', t: 0.8, bleed: 5, note: '精品瓦楞' },
-  { id: 'fluteE', name: 'E 楞瓦楞', t: 1.5, bleed: 5, note: '飞机盒常用' },
-  { id: 'fluteB', name: 'B 楞瓦楞', t: 3.0, bleed: 5, note: '电商外箱' }
+  { id: 'art200', name: '薄铜版纸 200g', t: 0.22, bleed: 3, paper: 'art-paper', note: '轻薄彩盒/裱纸' },
+  { id: 'sbs350', name: '白卡 350g', t: 0.45, bleed: 3, paper: 'coated-white', note: '折叠纸盒' },
+  { id: 'sbs400', name: '白卡 400g', t: 0.5, bleed: 3, paper: 'coated-white', note: '折叠纸盒' },
+  { id: 'art300', name: '铜版纸 300g', t: 0.35, bleed: 3, paper: 'art-paper', note: '裱糊/卡盒' },
+  { id: 'kraft350', name: '牛皮纸 350g', t: 0.42, bleed: 3, paper: 'kraft-natural', note: '素面环保' },
+  // ponytail: 瓦楞预览复用牛皮面纸和实际厚度；需要切口特写时再扩展波浪纸芯。
+  { id: 'fluteF', name: 'F 楞微瓦', t: 0.8, bleed: 5, paper: 'kraft-natural', note: '精品瓦楞' },
+  { id: 'fluteE', name: 'E 楞瓦楞', t: 1.5, bleed: 5, paper: 'kraft-natural', note: '飞机盒常用' },
+  { id: 'fluteB', name: 'B 楞瓦楞', t: 3.0, bleed: 5, paper: 'kraft-natural', note: '电商外箱' }
 ];
 
 export const TPLS = [

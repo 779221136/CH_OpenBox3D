@@ -2,13 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { store, useStore } from '../state/store.js';
 import { geomOf } from '../dieline/geom.js';
 import { MATS, templateNameOf } from '../dieline/templates.js';
-import { chooseProjectFile, downloadProject, projectStateOf } from '../projects/projects.js';
+import { chooseProjectFile, downloadProject, makeProject, projectStateOf } from '../projects/projects.js';
 import { exportPDF } from '../export/pdf.js';
 import { BoxPreview } from '../render3d/BoxPreview.jsx';
 import { DxfImport, CustomFoldControls } from '../ui/DxfImport.jsx';
 import { DesignView } from '../ui/DesignView.jsx';
 import { FoldCanvas } from './FoldCanvas.jsx';
 import { RenderPage } from './RenderPage.jsx';
+import { PlanLibrary } from './PlanLibrary.jsx';
+import { savePlan } from './savedPlans.js';
+import { designThumbnail } from './planThumbnail.js';
 import './workflow.css';
 
 const PAGES = ['knife', 'design', 'render'];
@@ -35,25 +38,32 @@ export function WorkflowApp() {
   const [ready, setReady] = useState(false), [page, setPage] = useState('knife');
   const [selectedHingeId, setSelectedHingeId] = useState(''), [designMode, setDesignMode] = useState('2d');
   const [error, setError] = useState(''), [exporting, setExporting] = useState(false);
+  const [library, setLibrary] = useState(''), [saveForm, setSaveForm] = useState(null), [saving, setSaving] = useState(false), [notice, setNotice] = useState('');
+  const [planMeta, setPlanMeta] = useState({ design: null, render: null });
+  const [renderDraft, setRenderDraft] = useState(null), [renderVersion, setRenderVersion] = useState(0);
+  const renderApi = useRef(null), saveDialog = useRef(null), pageRef = useRef('knife');
   const controls = useRef(null), engineRef = useRef(null);
   const custom = s.tpl === 'custom' ? s.custom : null;
   const g = ready ? geomOf(s, m.t) : null;
   const go = next => {
     if (next !== 'knife' && !ready) return;
-    setPage(next); location.hash = next;
+    if (pageRef.current === 'render' && next !== 'render' && renderApi.current) setRenderDraft(renderApi.current.snapshot());
+    pageRef.current = next; setPage(next); location.hash = next;
     store.set({ view: next === 'design' ? 'design' : next === 'render' ? 'three' : 'structure', foldFromQuery: true });
   };
   useEffect(() => {
     const navigate = () => {
       const next = location.hash.slice(1);
       const valid = PAGES.includes(next) && (ready || next === 'knife') ? next : 'knife';
-      setPage(valid); store.set({ view: valid === 'design' ? 'design' : valid === 'render' ? 'three' : 'structure' });
+      if (pageRef.current === 'render' && valid !== 'render' && renderApi.current) setRenderDraft(renderApi.current.snapshot());
+      pageRef.current = valid; setPage(valid); store.set({ view: valid === 'design' ? 'design' : valid === 'render' ? 'three' : 'structure' });
     };
     navigate(); window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, [ready]);
   const imported = () => {
-    setReady(true); setSelectedHingeId(''); setError(''); setPage('knife'); location.hash = 'knife';
+    setPlanMeta({ design: null, render: null }); setRenderDraft(null); setNotice('');
+    setReady(true); setSelectedHingeId(''); setError(''); pageRef.current = 'knife'; setPage('knife'); location.hash = 'knife';
     store.set({ view: 'structure', fold: 100, foldFromQuery: true });
   };
   const selectHinge = id => {
@@ -66,10 +76,39 @@ export function WorkflowApp() {
       const doc = await chooseProjectFile(); if (!doc) return;
       const patch = await projectStateOf(doc, 'design');
       store.reset({ ...patch, fold: 100, foldFromQuery: true });
-      setReady(true); setSelectedHingeId(''); setError(''); setPage('design'); location.hash = 'design';
+      setReady(true); setSelectedHingeId(''); setError(''); setPlanMeta({ design: null, render: null }); setRenderDraft(null); setNotice(''); pageRef.current = 'design'; setPage('design'); location.hash = 'design';
     } catch (e) { setError(e.message || String(e)); }
   };
-  const save = () => { try { downloadProject(store.get(), { name: templateNameOf(store.get()) }); } catch (e) { setError(e.message || String(e)); } };
+  useEffect(() => { if (saveForm) saveDialog.current?.showModal(); }, [!!saveForm]);
+  const openSave = () => {
+    setError('');
+    const kind = page === 'render' ? 'render' : 'design', meta = planMeta[kind];
+    setSaveForm({ kind, id: meta?.id, name: meta?.name || templateNameOf(store.get()) });
+  };
+  const save = async (asNew = false) => {
+    if (saving || !saveForm) return;
+    setSaving(true); setError('');
+    try {
+      const state = store.get(), kind = saveForm.kind;
+      const capture = kind === 'render' ? await renderApi.current?.capture() : { thumbnail: await designThumbnail(state, store.mat()) };
+      if (!capture) throw new Error('3D 尚未就绪，请稍后保存。');
+      const project = makeProject({ ...state, projectThumbnail: capture.thumbnail }, { name: saveForm.name });
+      const plan = await savePlan({ id: asNew ? undefined : saveForm.id, kind, name: project.meta.name, thumbnail: capture.thumbnail, project, renderScene: capture.renderScene });
+      setPlanMeta(prev => ({ ...prev, [kind]: { id: plan.id, name: plan.name } }));
+      if (kind === 'render') setRenderDraft(capture.renderScene);
+      setSaveForm(null); setNotice('已保存到' + (kind === 'render' ? '渲染设计方案' : '平面设计方案') + ' · ' + plan.name);
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setSaving(false); }
+  };
+  const openPlan = async plan => {
+    const patch = await projectStateOf(plan.project, plan.kind === 'render' ? 'three' : 'design');
+    store.reset({ ...patch, fold: 100, foldFromQuery: true });
+    setPlanMeta({ design: plan.kind === 'design' ? { id: plan.id, name: plan.name } : null, render: plan.kind === 'render' ? { id: plan.id, name: plan.name } : null });
+    setRenderDraft(plan.kind === 'render' ? plan.renderScene : null); setRenderVersion(v => v + 1);
+    setReady(true); setSelectedHingeId(''); setError(''); setNotice('已打开 · ' + plan.name); setLibrary('');
+    const next = plan.kind === 'render' ? 'render' : 'design'; pageRef.current = next; setPage(next); location.hash = next;
+  };
+  const exportProject = () => { try { downloadProject(store.get(), { name: planMeta.design?.name || templateNameOf(store.get()) }); } catch (e) { setError(e.message || String(e)); } };
   const pdf = async () => {
     setExporting(true); setError('');
     try { await exportPDF(store.get(), store.mat(), s.pdfMode); } catch (e) { setError(e.message || String(e)); }
@@ -80,7 +119,7 @@ export function WorkflowApp() {
       <a className="workflow-brand" href="./index.html" target="_blank" rel="noopener noreferrer"><span>▱</span><b>OpenBox3D</b><small>包装设计</small></a>
       <nav aria-label="包装设计流程">{PAGES.map((p, i) => <button key={p} className={page === p ? 'active' : ''} aria-current={page === p ? 'step' : undefined}
         disabled={p !== 'knife' && !ready} onClick={() => go(p)}><span>{i + 1}</span>{['刀模设置', '设计与预览', '渲染输出'][i]}</button>)}</nav>
-      <div className="workflow-header-actions"><button onClick={importProject}>导入工程</button><button onClick={save} disabled={!ready}>保存工程</button></div>
+      <div className="workflow-header-actions"><button onClick={() => setLibrary('design')}>平面设计方案</button><button onClick={() => setLibrary('render')}>渲染设计方案</button><button onClick={importProject}>导入工程</button><button onClick={exportProject} disabled={!ready}>导出工程</button><button onClick={openSave} disabled={!ready || saving}>保存工程</button></div>
     </header>
     {error && <div role="alert" className="workflow-error">{error}<button aria-label="关闭错误提示" onClick={() => setError('')}>×</button></div>}
     {page === 'knife' && <main className="workflow-knife">
@@ -109,7 +148,15 @@ export function WorkflowApp() {
         : <section className="workflow-full-preview" aria-label="完整 3D 预览"><BoxPreview s={s} m={m} /><FoldProgress s={s} /></section>}
       </div>
     </main>}
-    {page === 'render' && ready && <RenderPage s={s} m={m} onBack={() => go('design')} />}
-    <footer className="workflow-status"><span>{ready ? templateNameOf(s) : '未导入刀模'}</span>{g && <span>展开 {(g.sbb[2] - g.sbb[0]).toFixed(1)} × {(g.sbb[3] - g.sbb[1]).toFixed(1)} mm</span>}<span>本地处理</span><span className="workflow-status-end">{ready ? '修改后可保存为 .boxproj 工程' : '支持 DXF / .boxproj'}</span></footer>
+    {page === 'render' && ready && <RenderPage key={renderVersion} s={s} m={m} onBack={() => go('design')} onOpenLibrary={setLibrary} apiRef={renderApi} initialScene={renderDraft} />}
+    {library && <PlanLibrary kind={library} onClose={() => setLibrary('')} onChoose={openPlan} />}
+    {saveForm && <dialog ref={saveDialog} className="workflow-save-dialog" aria-labelledby="save-plan-title" onCancel={e => { if (saving) e.preventDefault(); else setSaveForm(null); }}>
+      <form onSubmit={e => { e.preventDefault(); save(); }}><h2 id="save-plan-title">保存{saveForm.kind === 'render' ? '渲染' : '平面'}设计方案</h2>
+        <label>方案名称<input autoFocus required maxLength={60} value={saveForm.name} onChange={e => setSaveForm({ ...saveForm, name: e.target.value })} /></label><p>保存在本机浏览器，可从方案库重新打开。</p>
+        {error && <p role="alert" className="workflow-save-error">{error}</p>}
+        <div><button type="button" disabled={saving} onClick={() => setSaveForm(null)}>取消</button>{saveForm.id && <button type="button" disabled={saving} onClick={() => save(true)}>另存新方案</button>}<button className="workflow-primary" disabled={saving || !saveForm.name.trim()}>{saving ? '正在保存…' : saveForm.id ? '更新方案' : '保存方案'}</button></div>
+      </form>
+    </dialog>}
+    <footer className="workflow-status"><span>{ready ? templateNameOf(s) : '未导入刀模'}</span>{g && <span>展开 {(g.sbb[2] - g.sbb[0]).toFixed(1)} × {(g.sbb[3] - g.sbb[1]).toFixed(1)} mm</span>}<span>本地处理</span><span className="workflow-status-end" role="status">{notice || (ready ? '方案保存在本机 · 可导出 .boxproj 工程' : '支持 DXF / .boxproj')}</span></footer>
   </div>;
 }
