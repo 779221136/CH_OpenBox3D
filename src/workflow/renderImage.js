@@ -43,6 +43,7 @@ export function captureRenderPng(engine, { width, height, transparent = false })
   const viewport = renderer.getViewport(new Vector4()), scissor = renderer.getScissor(new Vector4()), scissorTest = renderer.getScissorTest();
   const clearColor = renderer.getClearColor(new Color()), clearAlpha = renderer.getClearAlpha(), background = scene.background;
   const ground = engine.stageGround, groundVisible = ground?.visible;
+  const helpersVisible = engine.renderScene?.helpersVisible;
   const shotCamera = camera.clone();
   if (shotCamera.isOrthographicCamera) {
     const halfH = (shotCamera.top - shotCamera.bottom) / 2, centerX = (shotCamera.left + shotCamera.right) / 2;
@@ -50,6 +51,7 @@ export function captureRenderPng(engine, { width, height, transparent = false })
   } else shotCamera.aspect = width / height;
   shotCamera.updateProjectionMatrix();
   try {
+    engine.renderScene?.setHelpersVisible(false);
     renderer.setPixelRatio(1); renderer.setSize(width, height, false); renderer.setScissorTest(false);
     if (transparent) { scene.background = null; renderer.setClearAlpha(0); if (ground) ground.visible = false; }
     renderer.render(scene, shotCamera);
@@ -57,6 +59,7 @@ export function captureRenderPng(engine, { width, height, transparent = false })
     if (!png.startsWith('data:image/png;')) throw new Error('PNG 编码失败，请重试。');
     return png;
   } finally {
+    engine.renderScene?.setHelpersVisible(helpersVisible);
     scene.background = background;
     if (ground) ground.visible = groundVisible;
     renderer.setClearColor(clearColor, clearAlpha);
