@@ -156,8 +156,80 @@ assert.equal(await controller.replace(project), true, '空场景替换入口须�
 assert.equal(controller.list().length, 1); assert.equal(controller.selectedId, controller.mainId);
 const addedMain = controller.mainId, added = await controller.add({ ...project, meta: { name: '追加包装' } });
 assert.equal(controller.list().length, 2); assert.equal(controller.selectedId, added); assert.equal(controller.mainId, addedMain);
+
+const imported = structuredClone(snapshot);
+imported.models[0].project.appearance = { paper: 'kraft-natural' };
+imported.models[0].project.design.layers = [{ kind: 'image', imgSrc: 'data:image/png;base64,test-artwork' }];
+imported.camera = { invalid: true }; // 追加方案不应用来源相机，甚至无需解析它。
+const beforeAppend = controller.snapshot(), originalRoots = [...controller.models.values()].map(model => model.resource.root);
+const originalScene = engine.scene, originalProps = engine.props;
+const created = [], createModel = engine.createModel.bind(engine);
+engine.createModel = (...args) => {
+  const resource = createModel(...args), dispose = resource.dispose.bind(resource);
+  const record = { resource, disposed: 0 }; created.push(record);
+  resource.dispose = () => { record.disposed++; dispose(); };
+  return resource;
+};
+assert.equal(await controller.append(imported), true);
+assert.deepEqual(controller.list().slice(0, 2), beforeAppend.models, '追加方案不能重建或改动已有模型');
+assert.deepEqual([...controller.models.values()].slice(0, 2).map(model => model.resource.root), originalRoots);
+assert.equal(engine.scene, originalScene); assert.equal(engine.props, originalProps);
+assert.deepEqual(controller.captureCamera(), beforeAppend.camera); assert.equal(controller.mainId, beforeAppend.mainId);
+const appended = controller.list().slice(2);
+assert.equal(appended.length, 2); assert.equal(controller.selectedId, appended[0].id, '来源选中隐藏模型时应选中一个可见新模型');
+for (let i = 0; i < appended.length; i++) {
+  const actual = appended[i], source = imported.models[i];
+  assert.notEqual(actual.id, source.id);
+  assert.deepEqual(actual.project, source.project, '保留导入模型独立的材质及整版图片');
+  assert.equal(actual.hidden, source.hidden); assert.equal(actual.locked, source.locked);
+  assertTransform(actual.transform, { ...source.transform, position: actual.transform.position });
+  assert.deepEqual(actual.transform.position.slice(1), source.transform.position.slice(1));
+}
+const offsets = appended.map((model, i) => model.transform.position[0] - imported.models[i].transform.position[0]);
+assert.ok(Math.abs(offsets[0] - offsets[1]) < 1e-8, '导入组内相对位置须保持，包括隐藏模型');
+const existingMax = Math.max(...originalRoots.map(root => new THREE.Box3().setFromObject(root, true).max.x));
+const importedMin = new THREE.Box3().setFromObject(controller.models.get(appended[0].id).resource.root, true).min.x;
+assert.ok(importedMin > existingMax, '整组放到现有可见模型右侧避免重叠');
+const afterOneAppend = controller.snapshot();
+await controller.append(imported);
+assert.equal(controller.models.size, 6); assert.equal(new Set(controller.list().map(model => model.id)).size, 6, '同一方案重复导入须生成独立 ID');
+assert.deepEqual(controller.list().slice(0, 4), afterOneAppend.models);
+assert.deepEqual(controller.captureCamera(), beforeAppend.camera); assert.equal(controller.mainId, beforeAppend.mainId);
+
+const beforeFailure = controller.snapshot(), childrenBeforeFailure = [...engine.scene.children];
+let createdBeforeFailure = created.length;
+await assert.rejects(controller.append({ models: [imported.models[0], { ...imported.models[1], project: { fail: true } }] }), /bad project/);
+assert.equal(created.length - createdBeforeFailure, 1);
+assert.ok(created.slice(createdBeforeFailure).every(record => record.disposed === 1), '后续模型加载失败须释放此前准备的资源');
+createdBeforeFailure = created.length;
+await assert.rejects(controller.append({ models: [imported.models[0], { ...imported.models[1], transform: { scale: [1, 0, 1] } }] }), /大于零/);
+assert.equal(created.length - createdBeforeFailure, 2);
+assert.ok(created.slice(createdBeforeFailure).every(record => record.disposed === 1), '非法变换时所有已创建资源均须释放');
+await assert.rejects(controller.append({ models: Array.from({ length: 95 }, (_, i) => ({ ...imported.models[0], id: `limit-${i}` })) }), /100/);
+assert.deepEqual(controller.snapshot(), beforeFailure, '任何追加失败必须保留原有模型、选择、主模型及相机');
+assert.deepEqual(engine.scene.children, childrenBeforeFailure);
+await controller.restore({ models: [] });
+await controller.append(imported);
+assertTransform(controller.list()[0].transform, imported.models[0].transform, '空场景直接沿用来源位置');
+assert.ok(controller.selectedId); assert.ok(controller.mainId);
+assert.notDeepEqual(controller.captureCamera(), beforeFailure.camera, '空场景追加须适配模型');
+
 const helper = controller.transformControls.getHelper();
 controller.updateAppearance({ roughness: 0.7 }); const closing = controller.whenReady();
-controller.dispose(); await assert.rejects(closing, /已关闭/);
+// 关闭时恰有多模型导入进行中，已准备的新资源也必须回收。
+let releaseAppend, notifyLoading;
+const pauseAppend = new Promise(resolve => { releaseAppend = resolve; });
+const appendLoading = new Promise(resolve => { notifyLoading = resolve; });
+const resolveProject = controller.resolveProject;
+controller.resolveProject = async doc => {
+  if (doc.meta?.name === 'paused import') { notifyLoading(); await pauseAppend; }
+  return resolveProject(doc);
+};
+createdBeforeFailure = created.length;
+const pendingAppend = controller.append({ models: [imported.models[0], { ...imported.models[1], project: { ...project, meta: { name: 'paused import' } } }] });
+await appendLoading;
+controller.dispose(); releaseAppend();
+await assert.rejects(closing, /已关闭/); await assert.rejects(pendingAppend, /已关闭/);
+assert.ok(created.slice(createdBeforeFailure).every(record => record.disposed === 1), '页面关闭须回收正在追加的资源');
 assert.equal(engine.renderScene, null); assert.equal(helper.parent, null);
-console.log('render scene: real Folder clone/transform/lock/hide/drop/replace/frame/camera/raycast/restore/dispose passed');
+console.log('render scene: real Folder clone/transform/lock/hide/drop/replace/frame/camera/raycast/restore/append/rollback/dispose passed');
