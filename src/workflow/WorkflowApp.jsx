@@ -101,6 +101,12 @@ export function WorkflowApp() {
     finally { setSaving(false); }
   };
   const openPlan = async plan => {
+    if (plan.kind === 'render' && pageRef.current === 'render') {
+      if (!renderApi.current) throw new Error('3D 尚未就绪，请稍后添加方案。');
+      await renderApi.current.appendPlan(plan);
+      setError(''); setNotice('已加入当前画布 · ' + plan.name); setLibrary('');
+      return;
+    }
     const patch = await projectStateOf(plan.project, plan.kind === 'render' ? 'three' : 'design');
     store.reset({ ...patch, fold: 100, foldFromQuery: true });
     setPlanMeta({ design: plan.kind === 'design' ? { id: plan.id, name: plan.name } : null, render: plan.kind === 'render' ? { id: plan.id, name: plan.name } : null });
@@ -149,7 +155,7 @@ export function WorkflowApp() {
       </div>
     </main>}
     {page === 'render' && ready && <RenderPage key={renderVersion} s={s} m={m} onBack={() => go('design')} onOpenLibrary={setLibrary} apiRef={renderApi} initialScene={renderDraft} />}
-    {library && <PlanLibrary kind={library} onClose={() => setLibrary('')} onChoose={openPlan} />}
+    {library && <PlanLibrary kind={library} actionLabel={library === 'render' && page === 'render' ? '加入当前画布' : '打开方案'} onClose={() => setLibrary('')} onChoose={openPlan} />}
     {saveForm && <dialog ref={saveDialog} className="workflow-save-dialog" aria-labelledby="save-plan-title" onCancel={e => { if (saving) e.preventDefault(); else setSaveForm(null); }}>
       <form onSubmit={e => { e.preventDefault(); save(); }}><h2 id="save-plan-title">保存{saveForm.kind === 'render' ? '渲染' : '平面'}设计方案</h2>
         <label>方案名称<input autoFocus required maxLength={60} value={saveForm.name} onChange={e => setSaveForm({ ...saveForm, name: e.target.value })} /></label><p>保存在本机浏览器，可从方案库重新打开。</p>
