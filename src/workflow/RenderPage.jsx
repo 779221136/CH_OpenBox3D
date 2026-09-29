@@ -27,7 +27,7 @@ export function RenderPage({ s, m, onBack, onOpenLibrary, apiRef, initialScene }
   const controllerRef = useRef(null), selectedRef = useRef(null);
   const [sourceProject] = useState(() => { const project = makeProject(s, { name: templateNameOf(s) }); project.scene.fold = s.fold; return { current: project }; });
   const [ratio, setRatio] = useState(RATIOS.includes(initialScene?.settings?.ratio) ? initialScene.settings.ratio : '1:1');
-  const [resolution, setResolution] = useState(initialScene?.settings?.resolution === 2048 ? 2048 : 1024);
+  const [resolution, setResolution] = useState([1024, 2048, 4096, 8192].includes(initialScene?.settings?.resolution) ? initialScene.settings.resolution : 1024);
   const [background, setBackground] = useState(['scene', 'color', 'transparent'].includes(initialScene?.settings?.background) ? initialScene.settings.background : 'scene');
   const [mode, setMode] = useState('rotate'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [lastPng, setLastPng] = useState(null);
   const [models, setModels] = useState([]), [selectedId, setSelectedId] = useState(null), [sceneReady, setSceneReady] = useState(false);
@@ -86,7 +86,17 @@ export function RenderPage({ s, m, onBack, onOpenLibrary, apiRef, initialScene }
     const thumbnail = captureRenderPng(engineRef.current, { width: Math.round(size.width * factor), height: Math.round(size.height * factor), transparent: background === 'transparent' });
     return { thumbnail, renderScene: snapshot() };
   };
-  useEffect(() => { if (apiRef && sceneReady) apiRef.current = { snapshot, capture }; });
+  const appendPlan = async plan => {
+    const controller = controllerRef.current;
+    if (!controller || !sceneReady || busy) throw new Error('3D 正在处理，请稍后添加方案。');
+    setBusy(true); setError('');
+    try {
+      await controller.whenReady();
+      await controller.append(plan.renderScene || { models: [{ id: plan.id, project: plan.project, transform: {} }] });
+      if (alive.current) setNotice('已加入当前画布 · ' + plan.name);
+    } finally { if (alive.current) setBusy(false); }
+  };
+  useEffect(() => { if (apiRef && sceneReady) apiRef.current = { snapshot, capture, appendPlan }; });
   const run = async action => {
     if (busy || !sceneReady) return;
     setBusy(true); setError('');
@@ -173,7 +183,7 @@ export function RenderPage({ s, m, onBack, onOpenLibrary, apiRef, initialScene }
       </div>
       <div className="workflow-render-bottom">
         <div className="workflow-render-viewbar"><span role="status">{notice || `${dimensions.width} × ${dimensions.height} px${background === 'transparent' ? ' · 透明 PNG，白底预览' : ' · 实时预览'}`}</span><div role="group" aria-label="快捷视角">{[['front', '正视'], ['side', '侧视'], ['top', '顶视'], ['iso', '等轴']].map(([id, name]) => <button key={id} disabled={busy} onClick={() => engineRef.current?.setView(id)}>{name}</button>)}<button disabled={busy} onClick={() => controllerRef.current?.frame()}>适配</button></div></div>
-        <div className="workflow-render-outputbar"><label>构图比例<select aria-label="构图比例" disabled={busy} value={ratio} onChange={e => setRatio(e.target.value)}>{RATIOS.map(r => <option key={r}>{r}</option>)}</select></label><div className="workflow-render-submit"><button className="workflow-render-primary" disabled={!sceneReady || busy} title="渲染并下载 PNG" onClick={download}>{busy ? '正在渲染…' : '立即渲染'}</button><select aria-label="渲染分辨率" disabled={busy} value={resolution} onChange={e => setResolution(+e.target.value)}><option value={1024}>1K</option><option value={2048}>2K</option></select></div></div>
+        <div className="workflow-render-outputbar"><label>构图比例<select aria-label="构图比例" disabled={busy} value={ratio} onChange={e => setRatio(e.target.value)}>{RATIOS.map(r => <option key={r}>{r}</option>)}</select></label><div className="workflow-render-submit"><button className="workflow-render-primary" disabled={!sceneReady || busy} title="渲染并下载 PNG" onClick={download}>{busy ? '正在渲染…' : '立即渲染'}</button><select aria-label="渲染分辨率" disabled={busy} value={resolution} onChange={e => setResolution(+e.target.value)}><option value={1024}>1K</option><option value={2048}>2K</option><option value={4096}>4K</option><option value={8192}>8K</option></select></div></div>
         {error && <p className="workflow-render-error" role="alert">{error}</p>}
       </div>
     </main>

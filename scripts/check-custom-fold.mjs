@@ -100,5 +100,60 @@ const selectionOnly = { ready: true, props: {}, folder: { setSelectedHinge: id =
 BoxEngine.prototype.update.call(selectionOnly, { selectedHingeId: 'diagonal' });
 assert.equal(selectedId, 'diagonal');
 assert.ok(!selectionOnly._bt && !selectionOnly._at, 'Selection must not schedule geometry rebuilding or atlas baking.');
+
+// Closed mailer: front/back wings and lid flap occupy the same plane as the right wall.
+const rectangle = (panelId, x, y, w, h) => ({ panelId, pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] });
+const stacked = {
+  root: 'base', angles: {},
+  panels: [rectangle('base', 0, 0, 20, 20), rectangle('wall', 20, 0, 5, 20), rectangle('front', 0, 20, 20, 5), rectangle('front-wing', 20, 20, 5, 5),
+    rectangle('back', 0, -5, 20, 5), rectangle('back-wing', 20, -5, 5, 5), rectangle('lid', 0, -25, 20, 20), rectangle('lid-wing', 20, -25, 3, 20)],
+  hinges: [
+    { id: 'wall', a: 'base', b: 'wall', edge: [[20, 0], [20, 20]] },
+    { id: 'front', a: 'base', b: 'front', edge: [[0, 20], [20, 20]] },
+    { id: 'front-wing', a: 'front', b: 'front-wing', edge: [[20, 20], [20, 25]] },
+    { id: 'back', a: 'base', b: 'back', edge: [[0, 0], [20, 0]] },
+    { id: 'back-wing', a: 'back', b: 'back-wing', edge: [[20, -5], [20, 0]] },
+    { id: 'lid', a: 'back', b: 'lid', edge: [[0, -5], [20, -5]] },
+    { id: 'lid-wing', a: 'lid', b: 'lid-wing', edge: [[20, -25], [20, -5]] }
+  ]
+};
+const layered = new CustomFolder(THREE, [0, -25, 25, 25]);
+const layeredRoot = layered.build(stacked, t, material, material);
+const uvBefore = [...layered.meshes].map(([id, mesh]) => [id, [...mesh.geometry.attributes.uv.array]]);
+for (const progress of [100, 0, 55, 100, 100]) {
+  layered.applyFold(stacked, progress);
+  assert.equal(layered.meshes.get('wall').position.z, 0, 'The larger outside wall must retain its original plane.');
+  if (progress === 0) for (const mesh of layered.meshes.values()) assert.equal(mesh.position.z, 0, 'Unfolding must remove every paper stacking offset.');
+  if (progress === 100) {
+    const lid = layered.meshes.get('lid-wing').position.z, wing = layered.meshes.get('front-wing').position.z;
+    assert.ok(lid <= -t && wing <= lid - t, 'Overlapping lid/front wings must occupy distinct paper layers behind the wall.');
+    assert.equal(layered.meshes.get('back-wing').position.z, wing, 'Disjoint front/back wings can share the same inner layer.');
+    layered.setSelectedHinge('front-wing');
+    layeredRoot.updateWorldMatrix(true, true);
+    const hinge = layered.nodes.find(n => n.hinge.id === 'front-wing'), line = layered.hingeHighlight;
+    hinge.hinge.edge.forEach(([x, y], i) => close(
+      new THREE.Vector3().fromBufferAttribute(line.geometry.attributes.position, i).applyMatrix4(line.matrixWorld),
+      new THREE.Vector3(x - layered.origin[0], layered.origin[1] - y, 0).applyMatrix4(hinge.group.matrixWorld)
+    ));
+  }
+}
+layered.applyFold({ ...stacked, angles: { 'front-wing': 0 } }, 100);
+assert.equal(layered.meshes.get('front-wing').position.z, 0, 'Changing an overlapping flap to another plane must clear its previous offset.');
+assert.deepEqual([...layered.meshes].map(([id, mesh]) => [id, [...mesh.geometry.attributes.uv.array]]), uvBefore, 'Paper separation must never change print coordinates.');
+layered.setSelectedHinge(null); layeredRoot.traverse(o => o.geometry?.dispose());
+
+const diagonalPoint = ([x, y]) => [(x - y) / Math.sqrt(2), (x + y) / Math.sqrt(2)];
+const diagonalStack = { ...stacked, panels: stacked.panels.map(p => ({ ...p, pts: p.pts.map(diagonalPoint) })), hinges: stacked.hinges.map(h => ({ ...h, edge: h.edge.map(diagonalPoint) })) };
+const diagonalLayers = new CustomFolder(THREE, [-40, -40, 40, 40]);
+const diagonalRoot = diagonalLayers.build(diagonalStack, t, material, material);
+diagonalLayers.applyFold(diagonalStack, 100);
+assert.equal(diagonalLayers.meshes.get('wall').position.z, 0);
+assert.ok(diagonalLayers.meshes.get('front-wing').position.z <= diagonalLayers.meshes.get('lid-wing').position.z - t, 'Oblique coplanar panels must use the same projection axes.');
+diagonalRoot.traverse(o => o.geometry?.dispose());
+const disjoint = { root: 'a', panels: [{ panelId: 'a', pts: [[0, 0], [10, 0], [0, 10]] }, { panelId: 'b', pts: [[10, 10], [2, 10], [10, 2]] }], hinges: [] };
+const disjointFolder = new CustomFolder(THREE, [0, 0, 10, 10]), disjointRoot = disjointFolder.build(disjoint, t, material, material);
+disjointFolder.applyFold(disjoint, 100);
+assert.ok([...disjointFolder.meshes.values()].every(m => m.position.z === 0), 'Overlapping bounding boxes alone must not move disjoint paper shapes.');
+disjointRoot.traverse(o => o.geometry?.dispose());
 root.traverse(o => o.geometry?.dispose()); material.dispose();
-console.log('Custom fold checks passed: hinges, signed angles, forest, ground clearance, holes, atlas UV and selected crease alignment/cleanup.');
+console.log('Custom fold checks passed: hinges, signed angles, forest, ground clearance, holes, atlas UV, selected crease alignment and overlapping paper layers.');

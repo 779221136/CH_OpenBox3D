@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { deletePlan, getPlan, listPlans } from './savedPlans.js';
 import './plans.css';
 
-export function PlanLibrary({ kind, title, onClose, onChoose }) {
+export function PlanLibrary({ kind, title, actionLabel = '打开方案', onClose, onChoose }) {
   const dialog = useRef(null), alive = useRef(false), titleId = useId();
   const [plans, setPlans] = useState([]), [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(''), [error, setError] = useState('');
@@ -50,12 +50,12 @@ export function PlanLibrary({ kind, title, onClose, onChoose }) {
       {loading ? <p className="workflow-plan-empty" role="status">正在读取方案…</p> : visible.length === 0
         ? <p className="workflow-plan-empty">{query ? '没有找到匹配的方案。' : `暂无${kind === 'render' ? '渲染' : '设计'}方案。在对应画布点击“保存工程”后，方案会出现在这里。`}</p>
         : <div className="workflow-plan-grid">{visible.map(plan => <article key={plan.id} className="workflow-plan-card">
-          <button className="workflow-plan-preview" disabled={!!busy} onClick={() => open(plan.id)} aria-label={`打开 ${plan.name}`}>
+          <button className="workflow-plan-preview" disabled={!!busy} onClick={() => open(plan.id)} aria-label={`${actionLabel} ${plan.name}`}>
             {plan.thumbnail ? <img src={plan.thumbnail} alt={plan.name} loading="lazy" /> : <span>◇<small>暂无预览</small></span>}
           </button>
           <div className="workflow-plan-info"><h3 title={plan.name}>{plan.name}</h3><time dateTime={plan.updatedAt}>{new Date(plan.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>
             <div className="workflow-plan-actions">{deleting === plan.id ? <><span>删除此方案？</span><button disabled={!!busy} onClick={() => setDeleting('')}>取消</button><button className="workflow-plan-delete" disabled={!!busy} onClick={() => remove(plan.id)}>确认删除</button></>
-              : <><button className="workflow-plan-open" disabled={!!busy} onClick={() => open(plan.id)}>{busy === plan.id ? '处理中…' : '打开方案'}</button><button disabled={!!busy} onClick={() => setDeleting(plan.id)}>删除</button></>}</div>
+              : <><button className="workflow-plan-open" disabled={!!busy} onClick={() => open(plan.id)}>{busy === plan.id ? '处理中…' : actionLabel}</button><button disabled={!!busy} onClick={() => setDeleting(plan.id)}>删除</button></>}</div>
           </div>
         </article>)}</div>}
     </div>

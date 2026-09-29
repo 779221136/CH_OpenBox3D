@@ -282,16 +282,44 @@ export class RenderSceneController {
   applyCamera(view) { this.engine.applyCamera(view); this.onChange(); }
   snapshot() { return clone({ models: this.list(), selectedId: this.selectedId, mainId: this.mainId, camera: this.captureCamera() }); }
 
-  async restore(snapshot) {
+  async prepareSnapshot(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.models) || snapshot.models.length > 100) throw new Error('渲染方案模型列表无效。');
-    const version = ++this._restoreVersion, next = new Map();
+    const next = new Map();
     try {
       for (const entry of snapshot.models) {
-        if (!entry || typeof entry.id !== 'string' || !entry.id || next.has(entry.id) || !entry.project || !entry.transform) throw new Error('渲染方案模型数据无效。');
-        const resource = await this.resourceOf(entry.project);
-        const model = { id: entry.id, project: clone(entry.project), resource, locked: !!entry.locked, hidden: !!entry.hidden };
+        if (!entry || typeof entry.id !== 'string' || !entry.id || next.has(entry.id) || !entry.project || !entry.transform || typeof entry.transform !== 'object' || Array.isArray(entry.transform)) throw new Error('渲染方案模型数据无效。');
+        const project = clone(entry.project), resource = await this.resourceOf(project);
+        const model = { id: entry.id, project, resource, locked: !!entry.locked, hidden: !!entry.hidden };
         next.set(entry.id, model); applyTransform(resource.root, entry.transform); resource.root.visible = !model.hidden;
       }
+      return next;
+    } catch (error) { for (const model of next.values()) model.resource.dispose(); throw error; }
+  }
+
+  async append(snapshot) {
+    if (this.models.size + (snapshot?.models?.length || 0) > 100) throw new Error('同一渲染画布最多支持 100 个模型。');
+    const version = this._restoreVersion, next = await this.prepareSnapshot(snapshot);
+    try {
+      if (this._disposed || version !== this._restoreVersion) { for (const model of next.values()) model.resource.dispose(); return false; }
+      if (this.models.size + next.size > 100) throw new Error('同一渲染画布最多支持 100 个模型。');
+      const currentBox = new THREE.Box3(), importedBox = new THREE.Box3();
+      for (const model of this.models.values()) if (!model.hidden) currentBox.union(new THREE.Box3().setFromObject(model.resource.root, true));
+      for (const model of next.values()) if (!model.hidden) importedBox.union(new THREE.Box3().setFromObject(model.resource.root, true));
+      const offset = currentBox.isEmpty() || importedBox.isEmpty() ? 0 : currentBox.max.x + Math.max(10, (importedBox.max.x - importedBox.min.x) * 0.1) - importedBox.min.x;
+      for (const model of next.values()) { model.id = THREE.MathUtils.generateUUID(); model.resource.root.position.x += offset; }
+    } catch (error) { for (const model of next.values()) model.resource.dispose(); throw error; }
+    const wasEmpty = !this.models.size;
+    for (const model of next.values()) { this.models.set(model.id, model); this.engine.scene.add(model.resource.root); }
+    const preferred = next.get(snapshot.selectedId);
+    const selected = preferred && !preferred.hidden ? preferred : [...next.values()].find(model => !model.hidden);
+    if (selected) this.selectedId = selected.id;
+    if (wasEmpty) { this.frame(); this.mainId = next.get(snapshot.mainId)?.id || selected?.id || null; }
+    this.changed(); return true;
+  }
+
+  async restore(snapshot) {
+    const version = ++this._restoreVersion, next = await this.prepareSnapshot(snapshot);
+    try {
       if (this._disposed || version !== this._restoreVersion) { for (const model of next.values()) model.resource.dispose(); return false; }
       if (snapshot.camera) this.engine.applyCamera(snapshot.camera);
     } catch (error) { for (const model of next.values()) model.resource.dispose(); throw error; }

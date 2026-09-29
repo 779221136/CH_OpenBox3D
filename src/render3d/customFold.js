@@ -11,6 +11,16 @@ function centerOf(pts) {
   return { x: x / (3 * twiceArea), y: y / (3 * twiceArea), area: Math.abs(twiceArea / 2) };
 }
 
+function trianglesOverlap(a, b) {
+  const separated = (p, q) => p.some((v, i) => {
+    const w = p[(i + 1) % 3], dx = w[0] - v[0], dy = w[1] - v[1];
+    const project = r => dx * r[1] - dy * r[0];
+    const pa = p.map(project), pb = q.map(project);
+    return Math.min(Math.max(...pa), Math.max(...pb)) - Math.max(Math.min(...pa), Math.min(...pb)) <= 1e-6 * Math.hypot(dx, dy);
+  });
+  return !separated(a, b) && !separated(b, a);
+}
+
 export class CustomFolder {
   constructor(T, sbb, innerUV = [0.0002, 0.9998]) {
     this.sbb = sbb; this.innerUV = innerUV;
@@ -84,6 +94,8 @@ export class CustomFolder {
         }
       }
     }
+    this.layerOrder = [...this.meshes].sort(([a], [b]) => centers.get(b).area - centers.get(a).area).map(([, mesh]) => mesh);
+    this.thickness = t;
     this.maxDepth = Math.max(1, ...this.nodes.map(n => n.depth));
     this.applyFold(custom, 0);
     return this.root;
@@ -105,8 +117,36 @@ export class CustomFolder {
     node.group.add(line); this.hingeHighlight = line; this.selectedHingeId = id;
   }
 
+  separatePaperLayers(inverse) {
+    const placed = [];
+    const triangles = (surface, drop) => {
+      surface.triangles ||= [];
+      if (surface.triangles[drop]) return surface.triangles[drop];
+      const { position } = surface.mesh.geometry.attributes, caps = surface.mesh.geometry.groups[0], out = [];
+      for (let i = caps.start; i < caps.start + caps.count; i += 3) {
+        if (Math.abs(position.getZ(i)) > 1e-6) continue;
+        out.push([0, 1, 2].map(k => new THREE.Vector3().fromBufferAttribute(position, i + k).applyMatrix4(surface.matrix).toArray().filter((_, axis) => axis !== drop)));
+      }
+      return surface.triangles[drop] = out;
+    };
+    // ponytail: only separate coincident, same-facing paper layers; intersecting folds still need a collision/assembly solver.
+    for (const mesh of this.layerOrder) {
+      const matrix = new THREE.Matrix4().multiplyMatrices(inverse, mesh.matrixWorld);
+      const normal = new THREE.Vector3(0, 0, 1).transformDirection(matrix), origin = new THREE.Vector3().setFromMatrixPosition(matrix);
+      const surface = { mesh, matrix, normal, origin, bounds: mesh.geometry.boundingBox.clone().applyMatrix4(matrix), layer: 0 };
+      const abs = normal.toArray().map(Math.abs), drop = abs.indexOf(Math.max(...abs));
+      for (const other of placed) {
+        if (normal.dot(other.normal) < 1 - 1e-8 || Math.abs(normal.dot(other.origin.clone().sub(origin))) > 1e-5 || !surface.bounds.clone().expandByScalar(1e-6).intersectsBox(other.bounds)) continue;
+        if (triangles(surface, drop).some(a => triangles(other, drop).some(b => trianglesOverlap(a, b)))) surface.layer = Math.max(surface.layer, other.layer + 1);
+      }
+      mesh.position.z = surface.layer ? -surface.layer * this.thickness * 1.05 : 0;
+      placed.push(surface);
+    }
+  }
+
   applyFold(custom, fold) {
     const k = THREE.MathUtils.clamp(fold / 100, 0, 1);
+    for (const mesh of this.meshes.values()) mesh.position.z = 0;
     for (const n of this.nodes) {
       const angle = custom.angles?.[n.hinge.id] ?? n.hinge.angle ?? 90;
       if (!Number.isFinite(angle) || Math.abs(angle) > 180) throw new Error('折叠角度必须是 -180 到 180 度。');
@@ -119,6 +159,7 @@ export class CustomFolder {
     // 在根坐标系计算最低点，整体抬高；不覆盖引擎的拖动/转盒位置。
     this.sheet.position.y = 0; this.root.updateWorldMatrix(true, true);
     const inverse = this.root.matrixWorld.clone().invert(), bounds = new THREE.Box3(), matrix = new THREE.Matrix4(), vertex = new THREE.Vector3();
+    if (k > 0) { this.separatePaperLayers(inverse); this.root.updateWorldMatrix(true, true); }
     for (const mesh of this.meshes.values()) {
       matrix.multiplyMatrices(inverse, mesh.matrixWorld);
       const pos = mesh.geometry.attributes.position;
